@@ -1,4 +1,81 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --canvas-bg: #ffffff;
+  --text: #0f172a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #0ea5e9;
+  --grid-dot: #d1d5db;
+}
+
+[data-theme="dark"] {
+  --bg: #121212;
+  --surface: #1e1e1e;
+  --canvas-bg: #171717;
+  --text: #e6e6e6;
+  --muted: #9ca3af;
+  --border: #2a2a2a;
+  --accent: #18a0fb;
+  --grid-dot: #2b2b2b;
+}
+
+/* Base application background and text */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Override common Tailwind utility classes in dark mode using CSS variables so
+	 components don't need to be rewritten. Use !important where necessary to
+	 ensure utility classes are overridden when theme changes. */
+[data-theme="dark"] .bg-white {
+  background-color: var(--surface) !important;
+}
+[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--surface) !important;
+}
+[data-theme="dark"] .text-gray-800,
+[data-theme="dark"] .text-gray-900 {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-500 {
+  color: var(--muted) !important;
+}
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300 {
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .w-16.h-16.border-2.border-dashed {
+  border-color: var(--border) !important;
+}
+
+/* Buttons / panels */
+[data-theme="dark"] .shadow-sm {
+  box-shadow: none !important;
+}
+
+/* Helper utilities to use in markup if needed */
+.app-surface {
+  background: var(--surface);
+}
+.app-canvas {
+  background: var(--canvas-bg);
+}
+.text-primary {
+  color: var(--text);
+}
+.border-subtle {
+  border-color: var(--border);
+}
