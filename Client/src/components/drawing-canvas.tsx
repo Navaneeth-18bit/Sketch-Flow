@@ -17,6 +17,7 @@ import {
 import { useRef, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { ACTIONS } from "../constants";
+import Tooltip from "./Tooltip";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
@@ -240,89 +241,109 @@ export default function DrawingCanvas() {
       {/* TOOLBAR */}
       <div className="flex justify-center mb-6">
         <div className="flex items-center gap-1 p-1.5 bg-white border border-gray-200 shadow-sm rounded-xl">
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.SCRIBBLE)}
-            title="Pencil"
-          >
-            <LuPencil size="1.2rem" />
-          </button>
+          <Tooltip text="Draw freehand (Pencil)">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.SCRIBBLE)}
+              aria-label="Draw freehand (Pencil)"
+            >
+              <LuPencil size="1.2rem" />
+            </button>
+          </Tooltip>
           <div className="w-px h-4 bg-gray-200 mx-1" />
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.RECTANGLE)}
-            title="Rectangle"
-          >
-            <TbRectangle size="1.2rem" />
-          </button>
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.CIRCLE)}
-            title="Circle"
-          >
-            <FaRegCircle size="1.1rem" />
-          </button>
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.ARROW)}
-            title="Arrow"
-          >
-            <FaLongArrowAltRight size="1.2rem" />
-          </button>
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.TEXT)}
-            title="Text Box"
-          >
-            <LuType size="1.2rem" />
-          </button>
-          <button
-            className={`p-2 rounded-lg ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-            onClick={() => setAction(ACTIONS.ERASER)}
-            title="Eraser"
-          >
-            <TbEraser size="1.2rem" />
-          </button>
+          <Tooltip text="Draw rectangle">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.RECTANGLE)}
+              aria-label="Draw rectangle"
+            >
+              <TbRectangle size="1.2rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Draw circle">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.CIRCLE)}
+              aria-label="Draw circle"
+            >
+              <FaRegCircle size="1.1rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Draw arrow">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.ARROW)}
+              aria-label="Draw arrow"
+            >
+              <FaLongArrowAltRight size="1.2rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Add text box">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.TEXT)}
+              aria-label="Add text box"
+            >
+              <LuType size="1.2rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Eraser">
+            <button
+              className={`p-2 rounded-lg ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              onClick={() => setAction(ACTIONS.ERASER)}
+              aria-label="Eraser"
+            >
+              <TbEraser size="1.2rem" />
+            </button>
+          </Tooltip>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
           {/* COLOR PICKERS */}
-          <div className="flex items-center px-2">
-            <input
-              type="color"
-              value={fillColor}
-              onChange={(e) => setFillColor(e.target.value)}
-              className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
-              title="Shape Color"
-            />
-            {/* only show pen color picker when drawing tool is active */}
-            {action === ACTIONS.SCRIBBLE && (
+          <Tooltip text="Shape color">
+            <div className="flex items-center px-2">
               <input
                 type="color"
-                value={penColor}
-                onChange={(e) => setPenColor(e.target.value)}
-                className="w-8 h-8 ml-2 cursor-pointer rounded-md border-0 bg-transparent"
-                title="Pen Color"
+                value={fillColor}
+                onChange={(e) => setFillColor(e.target.value)}
+                className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
+                aria-label="Shape color"
               />
-            )}
-          </div>
+              {/* only show pen color picker when drawing tool is active */}
+              {action === ACTIONS.SCRIBBLE && (
+                <Tooltip text="Pen color">
+                  <input
+                    type="color"
+                    value={penColor}
+                    onChange={(e) => setPenColor(e.target.value)}
+                    className="w-8 h-8 ml-2 cursor-pointer rounded-md border-0 bg-transparent"
+                    aria-label="Pen color"
+                  />
+                </Tooltip>
+              )}
+            </div>
+          </Tooltip>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          <button
-            className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg"
-            onClick={handleExport}
-            title="Export Image"
-          >
-            <IoMdDownload size="1.2rem" />
-          </button>
-          <button
-            className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
-            onClick={handleClearAll}
-            title="Clear All"
-          >
-            <IoMdTrash size="1.2rem" />
-          </button>
+          <Tooltip text="Export as image">
+            <button
+              className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg"
+              onClick={handleExport}
+              aria-label="Export as image"
+            >
+              <IoMdDownload size="1.2rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Clear all">
+            <button
+              className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
+              onClick={handleClearAll}
+              aria-label="Clear all"
+            >
+              <IoMdTrash size="1.2rem" />
+            </button>
+          </Tooltip>
         </div>
         <button className="p-3 ml-5 rounded-lg bg-blue-600 text-white-600">
           Analyse Diagram

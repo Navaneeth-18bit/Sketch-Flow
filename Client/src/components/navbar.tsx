@@ -1,6 +1,7 @@
 import { Bell, Settings, User, PenTool } from "lucide-react";
 import { useContext, useState, useRef, useEffect } from "react";
 import { ThemeContext } from "../contexts/ThemeContext.jsx";
+import Tooltip from "./Tooltip";
 
 const Navbar = () => {
   const { isDark, toggleTheme } = useContext(ThemeContext);
@@ -32,22 +33,27 @@ const Navbar = () => {
         className="flex items-center gap-6 text-gray-600 relative"
         ref={rootRef}
       >
-        <button className="hover:text-blue-500 transition">
-          <Bell size={20} />
-        </button>
+        <Tooltip text="Notifications" position="bottom">
+          <button className="hover:text-blue-500 transition" aria-label="Notifications">
+            <Bell size={20} />
+          </button>
+        </Tooltip>
 
         <div className="relative">
-          <button
-            className="hover:text-blue-500 transition"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen((s) => !s);
-            }}
-            aria-expanded={open}
-            aria-haspopup="true"
-          >
-            <Settings size={20} />
-          </button>
+          <Tooltip text="Settings" position="bottom">
+            <button
+              className="hover:text-blue-500 transition"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((s) => !s);
+              }}
+              aria-expanded={open}
+              aria-haspopup="true"
+              aria-label="Settings"
+            >
+              <Settings size={20} />
+            </button>
+          </Tooltip>
 
           {open && (
             <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-md p-3 z-50">
@@ -82,9 +88,11 @@ const Navbar = () => {
           )}
         </div>
 
-        <button className="hover:text-blue-500 transition">
-          <User size={20} />
-        </button>
+        <Tooltip text="Profile" position="bottom">
+          <button className="hover:text-blue-500 transition" aria-label="Profile">
+            <User size={20} />
+          </button>
+        </Tooltip>
       </div>
     </header>
   );
