@@ -30,7 +30,8 @@ export default function DrawingCanvas() {
 
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [action, setAction] = useState(ACTIONS.SELECT);
-  const [fillColor, setFillColor] = useState("#3b82f6"); // Default blue
+  const [fillColor, setFillColor] = useState("#3b82f6"); // Default blue for shapes
+  const [penColor, setPenColor] = useState("#000000"); // independent pen color for scribble tool
   const [rectangles, setRectangles] = useState<any[]>([]);
   const [circles, setCircles] = useState<any[]>([]);
   const [arrows, setArrows] = useState<any[]>([]);
@@ -159,7 +160,8 @@ export default function DrawingCanvas() {
           {
             id,
             points: [x, y],
-            fillColor,
+            // keep the color that was selected at start
+            strokeColor: penColor,
             isEraser: action === ACTIONS.ERASER,
           },
         ]);
@@ -284,15 +286,25 @@ export default function DrawingCanvas() {
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          {/* COLOR PICKER */}
+          {/* COLOR PICKERS */}
           <div className="flex items-center px-2">
             <input
               type="color"
               value={fillColor}
               onChange={(e) => setFillColor(e.target.value)}
               className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
-              title="Change Color"
+              title="Shape Color"
             />
+            {/* only show pen color picker when drawing tool is active */}
+            {action === ACTIONS.SCRIBBLE && (
+              <input
+                type="color"
+                value={penColor}
+                onChange={(e) => setPenColor(e.target.value)}
+                className="w-8 h-8 ml-2 cursor-pointer rounded-md border-0 bg-transparent"
+                title="Pen Color"
+              />
+            )}
           </div>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
@@ -378,7 +390,7 @@ export default function DrawingCanvas() {
                 key={s.id}
                 {...s}
                 stroke={
-                  s.isEraser ? getCssVar("--canvas-bg", "#fff") : strokeColor
+                  s.isEraser ? getCssVar("--canvas-bg", "#fff") : s.strokeColor
                 }
                 strokeWidth={s.isEraser ? 25 : 2}
                 lineCap="round"
