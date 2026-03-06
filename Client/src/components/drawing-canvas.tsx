@@ -17,7 +17,6 @@ import {
 import { useRef, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { ACTIONS } from "../constants";
-import Tooltip from "./Tooltip";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
@@ -239,96 +238,79 @@ export default function DrawingCanvas() {
       {/* TOOLBAR */}
       <div className="flex justify-center mb-6">
         <div className="flex items-center gap-1 p-1.5 bg-white border border-gray-200 shadow-sm rounded-xl">
-          {/* Pencil */}
-          <Tooltip text="Draw with pencil">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.SCRIBBLE)}
-            >
-              <LuPencil size="1.2rem" />
-            </button>
-          </Tooltip>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.SCRIBBLE)}
+            title="Pencil"
+          >
+            <LuPencil size="1.2rem" />
+          </button>
           <div className="w-px h-4 bg-gray-200 mx-1" />
-          {/* Rectangle */}
-          <Tooltip text="Draw rectangle">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.RECTANGLE)}
-            >
-              <TbRectangle size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* Circle */}
-          <Tooltip text="Draw circle">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.CIRCLE)}
-            >
-              <FaRegCircle size="1.1rem" />
-            </button>
-          </Tooltip>
-          {/* Arrow */}
-          <Tooltip text="Draw arrow">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.ARROW)}
-            >
-              <FaLongArrowAltRight size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* Text Box */}
-          <Tooltip text="Add text box">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.TEXT)}
-            >
-              <LuType size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* Eraser */}
-          <Tooltip text="Erase drawing">
-            <button
-              className={`p-2 rounded-lg ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
-              onClick={() => setAction(ACTIONS.ERASER)}
-            >
-              <TbEraser size="1.2rem" />
-            </button>
-          </Tooltip>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.RECTANGLE)}
+            title="Rectangle"
+          >
+            <TbRectangle size="1.2rem" />
+          </button>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.CIRCLE)}
+            title="Circle"
+          >
+            <FaRegCircle size="1.1rem" />
+          </button>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.ARROW)}
+            title="Arrow"
+          >
+            <FaLongArrowAltRight size="1.2rem" />
+          </button>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.TEXT)}
+            title="Text Box"
+          >
+            <LuType size="1.2rem" />
+          </button>
+          <button
+            className={`p-2 rounded-lg ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+            onClick={() => setAction(ACTIONS.ERASER)}
+            title="Eraser"
+          >
+            <TbEraser size="1.2rem" />
+          </button>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
           {/* COLOR PICKER */}
-          <Tooltip text="Change color">
-            <div className="flex items-center px-2">
-              <input
-                type="color"
-                value={fillColor}
-                onChange={(e) => setFillColor(e.target.value)}
-                className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
-              />
-            </div>
-          </Tooltip>
+          <div className="flex items-center px-2">
+            <input
+              type="color"
+              value={fillColor}
+              onChange={(e) => setFillColor(e.target.value)}
+              className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
+              title="Change Color"
+            />
+          </div>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          {/* Export Image */}
-          <Tooltip text="Export as image">
-            <button
-              className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg"
-              onClick={handleExport}
-            >
-              <IoMdDownload size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* Clear All */}
-          <Tooltip text="Clear all drawings">
-            <button
-              className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
-              onClick={handleClearAll}
-            >
-              <IoMdTrash size="1.2rem" />
-            </button>
-          </Tooltip>
+          <button
+            className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg"
+            onClick={handleExport}
+            title="Export Image"
+          >
+            <IoMdDownload size="1.2rem" />
+          </button>
+          <button
+            className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
+            onClick={handleClearAll}
+            title="Clear All"
+          >
+            <IoMdTrash size="1.2rem" />
+          </button>
         </div>
         <button className="p-3 ml-5 rounded-lg bg-blue-600 text-white-600">
           Analyse Diagram
