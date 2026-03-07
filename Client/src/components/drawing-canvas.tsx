@@ -18,6 +18,9 @@ import { useRef, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { ACTIONS } from "../constants";
 import Tooltip from "./Tooltip";
+import DiagramAnalysisModal from "./DiagramAnalysisModal";
+import { DiagramData } from "../types";
+import axios from "axios";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
@@ -42,6 +45,10 @@ export default function DrawingCanvas() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const [textareaPos, setTextareaPos] = useState({ x: 0, y: 0, width: 0 });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [analysisData, setAnalysisData] = useState<DiagramData | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const strokeColorDefault = "#000";
   const getCssVar = (name: string, fallback = "") => {
@@ -221,13 +228,60 @@ export default function DrawingCanvas() {
     transformerRef.current.nodes([e.currentTarget]);
   }
 
-  function handleExport() {
+  const handleExport = () => {
     const uri = stageRef.current.toDataURL();
     const link = document.createElement("a");
-    link.download = "sketchflow-export.png";
+    link.download = "whiteboard.png";
     link.href = uri;
+    document.body.appendChild(link);
     link.click();
-  }
+    document.body.removeChild(link);
+  };
+
+  const handleAnalyzeDiagram = async () => {
+    setIsAnalyzing(true);
+    setIsModalOpen(true);
+    setAnalysisData(null);
+
+    try {
+      // Get image from canvas
+      const dataUrl = stageRef.current.toDataURL();
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], "diagram.png", { type: "image/png" });
+
+      const formData = new FormData();
+      formData.append("image", file);
+
+      // 1. Analyze Diagram (get mermaid code)
+      const analyzeRes = await axios.post("http://localhost:5000/api/analyze-diagram", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      const mermaidCode = analyzeRes.data.mermaidCode;
+
+      // 2. Generate Diagram Image
+      const generateRes = await axios.post("http://localhost:5000/api/generate-diagram", { mermaidCode });
+      const generatedImageUrl = generateRes.data.imageUrl;
+
+      // 3. Explain Diagram
+      const explainRes = await axios.post("http://localhost:5000/api/explain-diagram", formData, {
+        params: { mermaidCode }, // Send mermaid code as param or in body if supported
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      const explanation = explainRes.data;
+
+      setAnalysisData({
+        mermaidCode,
+        generatedImageUrl,
+        explanation
+      });
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      alert("Failed to analyze diagram. Please try again.");
+      setIsModalOpen(false);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const isEmpty =
     rectangles.length === 0 &&
@@ -345,14 +399,26 @@ export default function DrawingCanvas() {
             </button>
           </Tooltip>
         </div>
-        <button className="p-3 ml-5 rounded-lg bg-blue-600 text-white-600">
-          Analyse Diagram
+        <button
+          className="p-3 ml-5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md flex items-center gap-2"
+          onClick={handleAnalyzeDiagram}
+          disabled={isEmpty || isAnalyzing}
+        >
+          {isAnalyzing ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Analyzing...
+            </>
+          ) : (
+            "Analyse Diagram"
+          )}
         </button>
       </div>
 
       {/* CANVAS AREA */}
       <div
-        className="flex-1 relative border-2 border-dashed border-gray-200 rounded-3xl overflow-hidden bg-white shadow-inner"
+        className="flex-1 relative border-2 border-dashed border-gray-200 rounded-3xl overflow-hidden bg-white shadow-inner border-2 border-dashed border-blue-500 
+  dark:border-blue-400  "
         ref={containerRef}
       >
         <Stage
@@ -507,6 +573,13 @@ export default function DrawingCanvas() {
           }}
         />
       )}
+
+      <DiagramAnalysisModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        data={analysisData}
+        loading={isAnalyzing}
+      />
     </div>
   );
 }

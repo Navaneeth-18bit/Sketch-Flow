@@ -1,0 +1,107 @@
+openapi: 3.0.0
+info:
+  title: AI-Powered Diagram Analysis API
+  version: 1.0.0
+  description: API for analyzing diagrams using AI and generating mermaid code.
+paths:
+  /api/auth/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        201: { description: User registered }
+  /api/auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        200: { description: Login successful }
+  /api/analyze-diagram:
+    post:
+      summary: Analyze a diagram image and return mermaid code
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image: { type: string, format: binary }
+      responses:
+        200:
+          description: Analysis successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mermaidCode: { type: string }
+  /api/generate-diagram:
+    post:
+      summary: Generate an image from mermaid code
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mermaidCode: { type: string }
+      responses:
+        200:
+          description: Generation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imageUrl: { type: string }
+  /api/explain-diagram:
+    post:
+      summary: Get a detailed technical explanation of a diagram
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image: { type: string, format: binary }
+                mermaidCode: { type: string }
+      responses:
+        200:
+          description: Explanation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purpose: { type: string }
+                  components: { type: array, items: { type: string } }
+                  relationships: { type: array, items: { type: string } }
+                  keyInsights: { type: array, items: { type: string } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

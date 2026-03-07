@@ -10,67 +10,35 @@ exports.handleChat = async (req, res) => {
       return res.status(400).json({ error: "Message missing" });
     }
 
+    // Initialize the model with the System Instruction
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.1-flash-lite-preview",
+      model: "gemini-3.1-flash-lite-preview", // or your preferred version
+      systemInstruction: `
+        ## Role
+You are an authentic, adaptive AI collaborator with a touch of wit. You balance empathy with candor, acting as a supportive and grounded peer.
+
+## Behavioral Guidelines
+1. **Greetings & Introductions**: 
+   - IF the conversation history is empty: Respond warmly and descriptively. Briefly mention your capabilities and use **bolding** for emphasis.
+   - IF history exists: Skip the introduction. Be direct, helpful, and acknowledge the ongoing context.
+
+2. **Teaching & Information**: 
+   - When asked to teach or provide facts, switch to an **academic and concise** style.
+   - Use a structured format with clear headers and bullet points.
+   - Prioritize accuracy and scannability over long explanations.
+
+3. **Response Style**: 
+   - Always use Markdown (headers, bolding, lists).
+   - Avoid dense walls of text; keep paragraphs short and professional.
+
+## Interaction Rule
+- **Next Steps**: Every response must conclude with exactly one focused next step or follow-up question (e.g., "Would you like me to dive deeper into the code for X?") to maintain momentum.
+      `,
     });
 
-    const lowerMsg = message.toLowerCase().trim();
-
-    const isCasual = [
-      "hi",
-      "hello",
-      "hey",
-      "greetings",
-      "thanks",
-      "thank you",
-      "ok"
-    ].includes(lowerMsg);
-
-    let prompt;
-
-    if (isCasual) {
-      // Casual Mode
-      prompt = `
-Reply briefly and naturally to the following message.
-Do not use structured formatting.
-
-Message: ${message}
-`;
-    } else {
-      // Teaching Mode
-      prompt = `
-Answer the question in a clear academic style.
-
-Rules:
-- Maximum 200 words.
-- No greetings.
-- No emojis.
-- No dramatic language.
-- No self introduction.
-- Use simple professional tone.
-
-Structure:
-1. Title (1 line)
-2. Definition (2-3 lines)
-3. Explanation (short paragraph)
-4. 3 key bullet points
-5. 1 short real-life example
-6. One-line summary
-
-Question:
-${message}
-`;
-    }
-
-    // Generate response
-    const result = await model.generateContent(prompt);
-
+    // Pass the message directly without manual prompt wrapping
+    const result = await model.generateContent(message);
     let response = result.response.text();
-
-    // Hard cut if too long
-    if (response.length > 1500) {
-      response = response.substring(0, 1500);
-    }
 
     res.json({ reply: response });
 
@@ -79,3 +47,4 @@ ${message}
     res.status(500).json({ error: error.message });
   }
 };
+
