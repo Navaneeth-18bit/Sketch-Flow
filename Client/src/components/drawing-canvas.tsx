@@ -17,6 +17,7 @@ import {
 import { useRef, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { ACTIONS } from "../constants";
+import { auth } from "../utils/firebase";
 import Tooltip from "./Tooltip";
 import DiagramAnalysisModal from "./DiagramAnalysisModal";
 import { DiagramData } from "../types";
@@ -244,6 +245,18 @@ export default function DrawingCanvas() {
     setAnalysisData(null);
 
     try {
+      // 0. Get or create a session
+      let currentSessionId = localStorage.getItem('current_session_id');
+      if (!currentSessionId) {
+        const sessionRes = await axios.post("http://localhost:5000/api/sessions/create", {
+          title: `Session ${new Date().toLocaleDateString()}`
+        }, {
+          headers: { Authorization: `Bearer ${await auth.currentUser?.getIdToken()}` }
+        });
+        currentSessionId = sessionRes.data.session_id;
+        localStorage.setItem('current_session_id', currentSessionId!);
+      }
+
       // Get image from canvas
       const dataUrl = stageRef.current.toDataURL();
       const blob = await (await fetch(dataUrl)).blob();
@@ -252,20 +265,40 @@ export default function DrawingCanvas() {
       const formData = new FormData();
       formData.append("image", file);
 
+      // Send session and stroke data
+      formData.append("sessionId", currentSessionId!);
+      formData.append("strokeData", JSON.stringify({
+        rectangles, circles, arrows, scribbles, textboxes
+      }));
+
+      const token = await auth.currentUser?.getIdToken();
+
       // 1. Analyze Diagram (get mermaid code)
       const analyzeRes = await axios.post("http://localhost:5000/api/analyze-diagram", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`
+        }
       });
-      const mermaidCode = analyzeRes.data.mermaidCode;
+      const { mermaidCode, analysisId } = analyzeRes.data;
 
       // 2. Generate Diagram Image
-      const generateRes = await axios.post("http://localhost:5000/api/generate-diagram", { mermaidCode });
+      const generateRes = await axios.post("http://localhost:5000/api/generate-diagram", { mermaidCode }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const generatedImageUrl = generateRes.data.imageUrl;
 
       // 3. Explain Diagram
-      const explainRes = await axios.post("http://localhost:5000/api/explain-diagram", formData, {
-        params: { mermaidCode }, // Send mermaid code as param or in body if supported
-        headers: { "Content-Type": "multipart/form-data" }
+      const explainFormData = new FormData();
+      explainFormData.append("image", file);
+      explainFormData.append("mermaidCode", mermaidCode);
+      explainFormData.append("analysisId", analysisId);
+
+      const explainRes = await axios.post("http://localhost:5000/api/explain-diagram", explainFormData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`
+        }
       });
       const explanation = explainRes.data;
 
@@ -291,23 +324,23 @@ export default function DrawingCanvas() {
     arrows.length === 0;
 
   return (
-    <div className="flex-1 p-6 bg-white flex flex-col h-full font-['Inter']">
+    <div className="flex-1 p-6 bg-white dark:bg-[#121212] flex flex-col h-full font-['Inter'] transition-colors">
       {/* TOOLBAR */}
       <div className="flex justify-center mb-6">
-        <div className="flex items-center gap-1 p-1.5 bg-white border border-gray-200 shadow-sm rounded-xl">
+        <div className="flex items-center gap-1 p-1.5 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#303030] shadow-sm dark:shadow-none rounded-xl transition-colors">
           <Tooltip text="Draw freehand (Pencil)">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.SCRIBBLE)}
               aria-label="Draw freehand (Pencil)"
             >
               <LuPencil size="1.2rem" />
             </button>
           </Tooltip>
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
           <Tooltip text="Draw rectangle">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.RECTANGLE)}
               aria-label="Draw rectangle"
             >
@@ -316,7 +349,7 @@ export default function DrawingCanvas() {
           </Tooltip>
           <Tooltip text="Draw circle">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.CIRCLE)}
               aria-label="Draw circle"
             >
@@ -325,7 +358,7 @@ export default function DrawingCanvas() {
           </Tooltip>
           <Tooltip text="Draw arrow">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.ARROW)}
               aria-label="Draw arrow"
             >
@@ -334,7 +367,7 @@ export default function DrawingCanvas() {
           </Tooltip>
           <Tooltip text="Add text box">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.TEXT)}
               aria-label="Add text box"
             >
@@ -343,7 +376,7 @@ export default function DrawingCanvas() {
           </Tooltip>
           <Tooltip text="Eraser">
             <button
-              className={`p-2 rounded-lg ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
               onClick={() => setAction(ACTIONS.ERASER)}
               aria-label="Eraser"
             >
@@ -351,7 +384,7 @@ export default function DrawingCanvas() {
             </button>
           </Tooltip>
 
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
 
           {/* COLOR PICKERS */}
           <Tooltip text="Shape color">
@@ -378,11 +411,11 @@ export default function DrawingCanvas() {
             </div>
           </Tooltip>
 
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
 
           <Tooltip text="Export as image">
             <button
-              className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 rounded-lg transition-colors"
               onClick={handleExport}
               aria-label="Export as image"
             >
@@ -391,7 +424,7 @@ export default function DrawingCanvas() {
           </Tooltip>
           <Tooltip text="Clear all">
             <button
-              className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
+              className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
               onClick={handleClearAll}
               aria-label="Clear all"
             >
@@ -417,8 +450,7 @@ export default function DrawingCanvas() {
 
       {/* CANVAS AREA */}
       <div
-        className="flex-1 relative border-2 border-dashed border-gray-200 rounded-3xl overflow-hidden bg-white shadow-inner border-2 border-dashed border-blue-500 
-  dark:border-blue-400  "
+        className="flex-1 relative border-2 border-dashed border-gray-200 dark:border-[#333] rounded-3xl overflow-hidden bg-white dark:bg-[#1e1e1e] transition-colors shadow-inner"
         ref={containerRef}
       >
         <Stage
@@ -521,13 +553,13 @@ export default function DrawingCanvas() {
         {/* EMPTY STATE UI */}
         {isEmpty && (
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-2xl flex items-center justify-center mb-4 opacity-50">
-              <LuPencil size="1.5rem" className="text-gray-400" />
+            <div className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl flex items-center justify-center mb-4 opacity-70">
+              <LuPencil size="1.5rem" className="text-gray-400 dark:text-gray-500" />
             </div>
-            <h3 className="text-gray-600 font-semibold text-lg">
+            <h3 className="text-gray-600 dark:text-gray-300 font-semibold text-lg">
               Start drawing
             </h3>
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 dark:text-gray-500 text-sm">
               Select a tool above and draw on the canvas
             </p>
           </div>

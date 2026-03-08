@@ -8,6 +8,8 @@ const {
   chatWithDiagramHandler,
 } = require("../controllers/diagramController");
 const upload = require("../middleware/upload");
+const { authMiddleware } = require("../middleware/auth");
+const checkRole = require("../middleware/checkRole");
 
 // Rate limit: 10 requests per minute per user
 const apiLimiter = rateLimit({
@@ -16,9 +18,12 @@ const apiLimiter = rateLimit({
   message: { error: "Too many requests from this IP, please try again after a minute" },
 });
 
-router.post("/analyze-diagram", apiLimiter, upload.single("image"), analyzeDiagramHandler);
-router.post("/generate-diagram", apiLimiter, generateDiagramHandler);
-router.post("/explain-diagram", apiLimiter, upload.single("image"), explainDiagramHandler);
-router.post("/chat-diagram", apiLimiter, chatWithDiagramHandler);
+// Operations restricted to Teacher and Admin
+router.post("/analyze-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), analyzeDiagramHandler);
+router.post("/generate-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), generateDiagramHandler);
+router.post("/explain-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), explainDiagramHandler);
+
+// Chat restricted to authenticated users (Student, Teacher, Admin)
+router.post("/chat-diagram", apiLimiter, authMiddleware, checkRole(['student', 'teacher', 'admin']), chatWithDiagramHandler);
 
 module.exports = router;

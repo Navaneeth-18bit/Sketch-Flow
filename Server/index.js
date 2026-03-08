@@ -7,6 +7,8 @@ const { morganLogger, logger } = require("./utils/logger");
 const errorHandler = require("./middleware/errorHandler");
 const chatRoute = require("./routes/chat");
 const diagramRoute = require("./routes/diagram");
+const adminRoute = require("./routes/admin");
+const sessionRoute = require("./routes/session");
 
 const swaggerUi = require("swagger-ui-express");
 const YAML = require("yamljs");
@@ -31,6 +33,8 @@ app.use(morganLogger);
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use("/api/chat", chatRoute);
+app.use("/api/admin", adminRoute);
+app.use("/api/sessions", sessionRoute);
 app.use("/api", diagramRoute);
 
 app.use(errorHandler);

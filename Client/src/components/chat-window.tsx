@@ -46,7 +46,7 @@ const ChatWindow: React.FC = () => {
     setMessages((prev) => [...prev, newMessage]);
   };
 
-  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData.items;
 
     for (let item of items) {
@@ -116,48 +116,43 @@ const ChatWindow: React.FC = () => {
   };
 
   return (
-    <div className={`h-full flex flex-col ${isDark ? "bg-[#1e1e1e] text-white" : "bg-white text-black"}`}>
+    <div className="h-full flex flex-col bg-white dark:bg-[#1e1e1e] text-black dark:text-gray-100 transition-colors">
       {/* Header */}
-      <div
-        className={`px-4 py-3 border-b shrink-0 ${isDark ? "border-[#303030] bg-[#252525]" : "bg-gray-100 border-gray-200"}`}
-      >
-        <h2 className="font-semibold text-lg tracking-tight">AI Assistant</h2>
-        <p className="text-xs text-gray-500">Memory & Multimodal Enabled</p>
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-[#303030] bg-gray-50 dark:bg-[#252525] shrink-0 transition-colors">
+        <h2 className="font-bold text-lg tracking-tight text-gray-800 dark:text-gray-100">AI Assistant</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Memory & Multimodal Enabled</p>
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex flex-col max-w-[85%] ${
-              msg.role === "user" ? "ml-auto items-end" : "items-start"
-            }`}
+            className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "ml-auto items-end" : "items-start"
+              }`}
           >
             {msg.content && (
               <div
-                className={`px-4 py-3 rounded-2xl text-sm shadow-sm ${
-                  msg.role === "user"
-                    ? "bg-blue-600 text-white rounded-tr-none"
-                    : isDark 
-                      ? "bg-[#333333] text-gray-100 rounded-tl-none border border-[#444444]" 
-                      : "bg-gray-200 text-gray-800 rounded-tl-none"
-                }`}
+                className={`px-4 py-3 rounded-2xl text-sm shadow-sm transition-colors ${msg.role === "user"
+                  ? "bg-blue-600 text-white rounded-tr-none shadow-blue-500/20"
+                  : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-800 dark:text-gray-200 rounded-tl-none border border-gray-200 dark:border-[#333]"
+                  }`}
               >
                 {msg.role === "assistant" ? (
                   <ReactMarkdown
                     components={{
-                      h1: ({ children }) => <h1 className="font-bold text-lg mb-2 border-b border-gray-500 pb-1">{children}</h1>,
+                      h1: ({ children }) => <h1 className="font-bold text-lg mb-2 border-b border-gray-200 dark:border-gray-700 pb-1">{children}</h1>,
                       h2: ({ children }) => <h2 className="font-semibold text-base mb-2">{children}</h2>,
                       p: ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
                       ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                      li: ({ children }) => <li className="ml-2">{children}</li>,
                       code: ({ children }) => (
-                        <code className={`${isDark ? "bg-black" : "bg-gray-300"} px-1 py-0.5 rounded text-xs font-mono`}>
+                        <code className="bg-white/50 dark:bg-black/30 px-1.5 py-0.5 rounded text-xs font-mono border border-gray-200 dark:border-gray-700">
                           {children}
                         </code>
                       ),
                       pre: ({ children }) => (
-                        <pre className={`${isDark ? "bg-black" : "bg-gray-800 text-white"} p-3 rounded-lg text-xs overflow-x-auto my-2`}>
+                        <pre className="bg-gray-800 dark:bg-black text-gray-50 p-3 rounded-xl text-xs overflow-x-auto my-3 shadow-inner">
                           {children}
                         </pre>
                       ),
@@ -166,7 +161,7 @@ const ChatWindow: React.FC = () => {
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
-                  msg.content
+                  <span className="whitespace-pre-wrap">{msg.content}</span>
                 )}
               </div>
             )}
@@ -175,15 +170,18 @@ const ChatWindow: React.FC = () => {
               <img
                 src={msg.image}
                 alt="uploaded"
-                className="mt-2 rounded-lg max-h-60 border border-gray-400 shadow-md"
+                className="mt-2 rounded-xl max-h-60 border border-gray-200 dark:border-[#333] shadow-md object-cover"
               />
             )}
           </div>
         ))}
 
         {loading && (
-          <div className={`text-sm animate-pulse ${isDark ? "text-blue-400" : "text-blue-600"}`}>
-            AI is crafting a response...
+          <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium py-2">
+            <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="ml-1">AI is crafting a response...</span>
           </div>
         )}
 
@@ -191,12 +189,11 @@ const ChatWindow: React.FC = () => {
       </div>
 
       {/* Input Section */}
-      <div
-        className={`p-4 border-t flex items-center gap-2 shrink-0 ${isDark ? "border-[#303030] bg-[#252525]" : "bg-gray-50"}`}
-      >
+      <div className="p-4 border-t border-gray-100 dark:border-[#303030] bg-gray-50 dark:bg-[#252525] flex items-end gap-2 shrink-0 transition-colors">
         <button
           onClick={() => fileInputRef.current?.click()}
-          className={`p-2.5 rounded-full transition-colors ${isDark ? "bg-[#3a3a3a] hover:bg-[#4a4a4a]" : "bg-gray-200 hover:bg-gray-300"}`}
+          className="p-3 rounded-xl transition-colors bg-white dark:bg-[#1e1e1e] hover:bg-gray-100 dark:hover:bg-[#333] border border-gray-200 dark:border-[#303030] text-gray-500 dark:text-gray-400 shadow-sm"
+          aria-label="Upload Image"
         >
           📎
         </button>
@@ -209,27 +206,32 @@ const ChatWindow: React.FC = () => {
           onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
         />
 
-        <input
-          type="text"
+        <textarea
           placeholder="Type your message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onPaste={handlePaste}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
           onDoubleClick={handleInputToggle}
-          className={`flex-1 px-4 py-2.5 rounded-xl border outline-none transition-all focus:ring-2 focus:ring-blue-500 ${
-            isDark 
-              ? "bg-[#1e1e1e] border-[#444444] text-white" 
-              : "bg-white border-gray-300 text-black"
-          }`}
+          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#303030] outline-none transition-all focus:ring-2 focus:ring-blue-500/50 bg-white dark:bg-[#1e1e1e] text-gray-800 dark:text-gray-100 shadow-sm resize-none"
+          rows={1}
+          style={{ minHeight: '46px', maxHeight: '120px' }}
         />
 
         <button
           onClick={handleSend}
           disabled={!input.trim()}
-          className="w-12 h-12 flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
+          className="w-12 h-[46px] flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-blue-500/20"
+          aria-label="Send Message"
         >
-          ➤
+          <svg className="w-5 h-5 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
         </button>
       </div>
     </div>

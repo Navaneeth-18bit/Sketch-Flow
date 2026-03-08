@@ -2,7 +2,7 @@ import React, { createContext, useEffect, useState } from "react";
 
 export const ThemeContext = createContext({
   theme: "light",
-  toggleTheme: () => {},
+  toggleTheme: () => { },
   isDark: false,
 });
 
@@ -17,9 +17,14 @@ export const ThemeProvider = ({ children }) => {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
     try {
       localStorage.setItem("theme", theme);
-    } catch {}
+    } catch { }
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));

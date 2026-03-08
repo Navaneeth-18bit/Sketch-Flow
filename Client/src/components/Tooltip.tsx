@@ -35,7 +35,7 @@ const Tooltip: React.FC<TooltipProps> = ({ children, text, position = 'top' }) =
           ref={tooltipRef}
           role="tooltip"
           id="tooltip"
-          className={`absolute z-50 px-2 py-1 rounded bg-gray-800 text-white text-xs shadow-lg whitespace-nowrap ${positionClasses[position]}`}
+          className={`absolute z-50 px-2.5 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-200 text-white dark:text-gray-900 text-xs font-medium shadow-xl whitespace-nowrap transition-all ${positionClasses[position]}`}
         >
           {text}
         </div>
