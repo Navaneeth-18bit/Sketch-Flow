@@ -25,13 +25,19 @@ import axios from "axios";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
-export default function DrawingCanvas() {
+interface CanvasProps {
+  activeSessionId: string | null;
+  onNewSession: () => void;
+}
+
+export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasProps) {
   const [gridPattern, setGridPattern] = useState<HTMLCanvasElement | null>(
     null,
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>();
   const transformerRef = useRef<any>();
+  const isInitialLoad = useRef(true);
 
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [action, setAction] = useState(ACTIONS.SELECT);
@@ -83,6 +89,67 @@ export default function DrawingCanvas() {
     window.addEventListener("resize", updateSize);
     return () => window.removeEventListener("resize", updateSize);
   }, []);
+
+  // Fetch strokes on session change
+  useEffect(() => {
+    if (!activeSessionId) return;
+
+    isInitialLoad.current = true;
+
+    setRectangles([]);
+    setCircles([]);
+    setArrows([]);
+    setScribbles([]);
+    setTextboxes([]);
+
+    const loadSessionStrokes = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await axios.get(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (res.data && res.data.stroke_data) {
+          const sd = res.data.stroke_data;
+          setRectangles(sd.rectangles || []);
+          setCircles(sd.circles || []);
+          setArrows(sd.arrows || []);
+          setScribbles(sd.scribbles || []);
+          setTextboxes(sd.textboxes || []);
+        }
+      } catch (err) {
+        console.error("Failed to load session strokes:", err);
+      } finally {
+        setTimeout(() => {
+          isInitialLoad.current = false;
+        }, 100);
+      }
+    };
+
+    loadSessionStrokes();
+  }, [activeSessionId]);
+
+  // Auto-save mechanism
+  useEffect(() => {
+    if (!activeSessionId || isInitialLoad.current) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        await axios.post(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
+          strokeData: { rectangles, circles, arrows, scribbles, textboxes }
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.error("Failed to auto-save strokes:", err);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [rectangles, circles, arrows, scribbles, textboxes, activeSessionId]);
 
   // create grid pattern so it uses CSS variable for dot color
   useEffect(() => {
@@ -246,7 +313,7 @@ export default function DrawingCanvas() {
 
     try {
       // 0. Get or create a session
-      let currentSessionId = localStorage.getItem('current_session_id');
+      let currentSessionId = activeSessionId || localStorage.getItem('current_session_id');
       if (!currentSessionId) {
         const sessionRes = await axios.post("http://localhost:5000/api/sessions/create", {
           title: `Session ${new Date().toLocaleDateString()}`
@@ -433,7 +500,7 @@ export default function DrawingCanvas() {
           </Tooltip>
         </div>
         <button
-          className="p-3 ml-5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md flex items-center gap-2"
+          className="p-3 ml-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md flex items-center gap-2"
           onClick={handleAnalyzeDiagram}
           disabled={isEmpty || isAnalyzing}
         >

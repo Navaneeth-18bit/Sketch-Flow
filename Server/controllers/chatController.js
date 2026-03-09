@@ -1,13 +1,46 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { supabase } = require("../utils/supabase");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 exports.handleChat = async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, sessionId } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "Message missing" });
+    }
+
+    if (!sessionId) {
+      return res.status(400).json({ error: "Session ID missing" });
+    }
+
+    // 1. Save User Message to Supabase
+    const { error: userMsgError } = await supabase
+      .from('messages')
+      .insert([
+        { session_id: sessionId, role: 'user', content: message }
+      ]);
+
+    if (userMsgError) {
+      console.error("Error saving user message:", userMsgError);
+      // We can continue to generate a response even if saving fails, or fail early. Let's continue for UX.
+    }
+
+    // 2. Fetch recent history for the Gemini context (optional but recommended for "memory")
+    const { data: historyData, error: historyError } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .limit(20); // Get last 20 messages for context
+
+    let chatHistory = [];
+    if (!historyError && historyData) {
+      chatHistory = historyData.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user', // Gemini uses 'model' instead of 'assistant'
+        parts: [{ text: msg.content }]
+      }));
     }
 
     // Initialize the model with the System Instruction
@@ -36,9 +69,24 @@ You are an authentic, adaptive AI collaborator with a touch of wit. You balance 
       `,
     });
 
+    const chat = model.startChat({
+      history: chatHistory,
+    });
+
     // Pass the message directly without manual prompt wrapping
-    const result = await model.generateContent(message);
+    const result = await chat.sendMessage(message);
     let response = result.response.text();
+
+    // 3. Save AI Response to Supabase
+    const { error: aiMsgError } = await supabase
+      .from('messages')
+      .insert([
+        { session_id: sessionId, role: 'assistant', content: response }
+      ]);
+
+    if (aiMsgError) {
+      console.error("Error saving AI message:", aiMsgError);
+    }
 
     res.json({ reply: response });
 
@@ -48,3 +96,28 @@ You are an authentic, adaptive AI collaborator with a touch of wit. You balance 
   }
 };
 
+exports.getChatHistory = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: "Session ID missing" });
+    }
+
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    res.json(messages);
+
+  } catch (error) {
+    console.error("Error fetching chat history:", error);
+    res.status(500).json({ error: error.message });
+  }
+};

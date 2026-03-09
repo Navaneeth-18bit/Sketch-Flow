@@ -7,12 +7,38 @@ import { ThemeContext } from "./contexts/ThemeContext.jsx";
 import { auth } from "./utils/firebase";
 import { supabase } from "./utils/supabase";
 import { onIdTokenChanged } from "firebase/auth";
+import axios from "axios";
+import RecentSessionsSidebar from "./components/RecentSessionsSidebar.tsx";
 
 function App() {
   const { isDark } = useContext(ThemeContext);
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeSessionId, setActiveSessionId] = useState(() => localStorage.getItem("current_session_id"));
+
+  const handleNewSession = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await axios.post("http://localhost:5000/api/sessions/create", {
+        title: `Session ${new Date().toLocaleDateString()}`
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const newId = res.data.session_id;
+      setActiveSessionId(newId);
+      localStorage.setItem('current_session_id', newId);
+    } catch (error) {
+      console.error("Failed to create session", error);
+    }
+  };
+
+  useEffect(() => {
+    if (user && role === "teacher" && !activeSessionId) {
+      handleNewSession();
+    }
+  }, [user, role, activeSessionId]);
 
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
@@ -63,10 +89,22 @@ function App() {
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+        {/* Recent Sessions Sidebar (Teacher Only) */}
+        {role === 'teacher' && (
+          <RecentSessionsSidebar
+            activeSessionId={activeSessionId}
+            onSelectSession={(id) => {
+              setActiveSessionId(id);
+              localStorage.setItem('current_session_id', id);
+            }}
+            onNewSession={handleNewSession}
+          />
+        )}
+
         {/* Canvas - Only for Teacher and Admin */}
         {(role === 'teacher' || role === 'admin') ? (
-          <div className="flex-1 overflow-hidden">
-            <Canvas />
+          <div className="flex-1 overflow-hidden border-l border-gray-200 dark:border-[#303030]">
+            <Canvas activeSessionId={activeSessionId} onNewSession={handleNewSession} />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-[#121212] text-gray-500 dark:text-gray-400 transition-colors">
@@ -79,7 +117,7 @@ function App() {
 
         {/* Chat - Available to everyone */}
         <div className="h-1/2 md:h-full md:w-[380px] shrink-0 border-t md:border-t-0 md:border-l border-gray-200 dark:border-[#303030] overflow-hidden bg-white dark:bg-[#1e1e1e] transition-colors">
-          <ChatWindow />
+          <ChatWindow activeSessionId={activeSessionId} />
         </div>
       </div>
     </div>

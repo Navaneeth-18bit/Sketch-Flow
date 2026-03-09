@@ -1,7 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 
 :root {
   --bg: #f8fafc;
@@ -31,6 +31,7 @@ body,
 #root {
   height: 100%;
 }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -42,12 +43,15 @@ body {
 .app-surface {
   background: var(--surface);
 }
+
 .app-canvas {
   background: var(--canvas-bg);
 }
+
 .text-primary {
   color: var(--text);
 }
+
 .border-subtle {
   border-color: var(--border);
 }

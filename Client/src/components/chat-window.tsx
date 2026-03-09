@@ -10,7 +10,7 @@ type Message = {
   fileName?: string;
 };
 
-const ChatWindow: React.FC = () => {
+const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessionId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,6 +22,31 @@ const ChatWindow: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!activeSessionId) {
+        setMessages([]);
+        return;
+      }
+      try {
+        const response = await fetch(`http://localhost:5000/api/chat/${activeSessionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const loadedMessages: Message[] = data.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content,
+          }));
+          setMessages(loadedMessages);
+        }
+      } catch (error) {
+        console.error("Failed to fetch chat history:", error);
+      }
+    };
+
+    fetchHistory();
+  }, [activeSessionId]);
 
   const convertToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -77,6 +102,7 @@ const ChatWindow: React.FC = () => {
         body: JSON.stringify({
           message: userMessage.content,
           history: history, // Sending history to enable "memory"
+          sessionId: activeSessionId
         }),
       });
 
