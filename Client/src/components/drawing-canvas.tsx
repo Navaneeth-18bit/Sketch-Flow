@@ -1,9 +1,12 @@
-import { TbRectangle, TbEraser } from "react-icons/tb";
+import { TbRectangle, TbEraser, TbTriangle, TbPentagon, TbHexagon, TbOvalVertical, TbVectorBezier2, TbRoute } from "react-icons/tb";
 import { IoMdDownload, IoMdTrash } from "react-icons/io";
-import { FaLongArrowAltRight } from "react-icons/fa";
+import { FaLongArrowAltRight, FaRegStar } from "react-icons/fa";
 import { LuPencil, LuType } from "react-icons/lu";
 import { GiArrowCursor } from "react-icons/gi";
-import { FaRegCircle } from "react-icons/fa6";
+import { FaRegCircle, FaRegCommentDots } from "react-icons/fa6";
+import { BsDiamond } from "react-icons/bs";
+import { MdDeleteOutline } from "react-icons/md";
+import { BiShapePolygon } from "react-icons/bi";
 import {
   Arrow,
   Circle,
@@ -13,6 +16,10 @@ import {
   Stage,
   Transformer,
   Text,
+  RegularPolygon,
+  Ellipse,
+  Path,
+  Star,
 } from "react-konva";
 import { useRef, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -49,6 +56,24 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const [scribbles, setScribbles] = useState<any[]>([]);
   const [textboxes, setTextboxes] = useState<any[]>([]);
 
+  // New Shapes
+  const [triangles, setTriangles] = useState<any[]>([]);
+  const [diamonds, setDiamonds] = useState<any[]>([]);
+  const [pentagons, setPentagons] = useState<any[]>([]);
+  const [hexagons, setHexagons] = useState<any[]>([]);
+  const [ellipses, setEllipses] = useState<any[]>([]);
+  const [beziers, setBeziers] = useState<any[]>([]);
+  const [connectors, setConnectors] = useState<any[]>([]);
+  const [speechBubbles, setSpeechBubbles] = useState<any[]>([]);
+  const [stars, setStars] = useState<any[]>([]);
+  const [parallelograms, setParallelograms] = useState<any[]>([]);
+
+  const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
+
+  // Track which shape is selected (for delete / move)
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [selectedShapeType, setSelectedShapeType] = useState<string | null>(null);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const [textareaPos, setTextareaPos] = useState({ x: 0, y: 0, width: 0 });
@@ -75,6 +100,25 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const currentShapeId = useRef<string | null>(null);
   const isDraggable = action === ACTIONS.SELECT;
 
+  // Helper: delete a shape by id across all shape collections
+  const deleteShapeById = (id: string) => {
+    setRectangles((p) => p.filter((s) => s.id !== id));
+    setCircles((p) => p.filter((s) => s.id !== id));
+    setArrows((p) => p.filter((s) => s.id !== id));
+    setScribbles((p) => p.filter((s) => s.id !== id));
+    setTextboxes((p) => p.filter((s) => s.id !== id));
+    setTriangles((p) => p.filter((s) => s.id !== id));
+    setDiamonds((p) => p.filter((s) => s.id !== id));
+    setPentagons((p) => p.filter((s) => s.id !== id));
+    setHexagons((p) => p.filter((s) => s.id !== id));
+    setEllipses((p) => p.filter((s) => s.id !== id));
+    setBeziers((p) => p.filter((s) => s.id !== id));
+    setConnectors((p) => p.filter((s) => s.id !== id));
+    setSpeechBubbles((p) => p.filter((s) => s.id !== id));
+    setStars((p) => p.filter((s) => s.id !== id));
+    setParallelograms((p) => p.filter((s) => s.id !== id));
+  };
+
   // Handle Dynamic Sizing
   useEffect(() => {
     const updateSize = () => {
@@ -85,9 +129,22 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         });
       }
     };
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateSize();
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
     updateSize();
     window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
+
+    return () => {
+      window.removeEventListener("resize", updateSize);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   // Fetch strokes on session change
@@ -101,6 +158,16 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setArrows([]);
     setScribbles([]);
     setTextboxes([]);
+    setTriangles([]);
+    setDiamonds([]);
+    setPentagons([]);
+    setHexagons([]);
+    setEllipses([]);
+    setBeziers([]);
+    setConnectors([]);
+    setSpeechBubbles([]);
+    setStars([]);
+    setParallelograms([]);
 
     const loadSessionStrokes = async () => {
       try {
@@ -117,6 +184,16 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           setArrows(sd.arrows || []);
           setScribbles(sd.scribbles || []);
           setTextboxes(sd.textboxes || []);
+          setTriangles(sd.triangles || []);
+          setDiamonds(sd.diamonds || []);
+          setPentagons(sd.pentagons || []);
+          setHexagons(sd.hexagons || []);
+          setEllipses(sd.ellipses || []);
+          setBeziers(sd.beziers || []);
+          setConnectors(sd.connectors || []);
+          setSpeechBubbles(sd.speechBubbles || []);
+          setStars(sd.stars || []);
+          setParallelograms(sd.parallelograms || []);
         }
       } catch (err) {
         console.error("Failed to load session strokes:", err);
@@ -139,7 +216,10 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         const token = await auth.currentUser?.getIdToken();
         if (!token) return;
         await axios.post(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
-          strokeData: { rectangles, circles, arrows, scribbles, textboxes }
+          strokeData: {
+            rectangles, circles, arrows, scribbles, textboxes,
+            triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms
+          }
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -149,7 +229,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [rectangles, circles, arrows, scribbles, textboxes, activeSessionId]);
+  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, activeSessionId]);
 
   // create grid pattern so it uses CSS variable for dot color
   useEffect(() => {
@@ -192,6 +272,16 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setArrows([]);
     setScribbles([]);
     setTextboxes([]);
+    setTriangles([]);
+    setDiamonds([]);
+    setPentagons([]);
+    setHexagons([]);
+    setEllipses([]);
+    setBeziers([]);
+    setConnectors([]);
+    setSpeechBubbles([]);
+    setStars([]);
+    setParallelograms([]);
   };
 
   function onPointerDown() {
@@ -221,6 +311,36 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           { id, points: [x, y, x + 5, y + 5], fillColor },
         ]);
         break;
+      case ACTIONS.TRIANGLE:
+        setTriangles((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        break;
+      case ACTIONS.DIAMOND:
+        setDiamonds((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        break;
+      case ACTIONS.PENTAGON:
+        setPentagons((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        break;
+      case ACTIONS.HEXAGON:
+        setHexagons((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        break;
+      case ACTIONS.ELLIPSE:
+        setEllipses((prev) => [...prev, { id, x, y, radiusX: 5, radiusY: 5, fillColor }]);
+        break;
+      case ACTIONS.STAR:
+        setStars((prev) => [...prev, { id, x, y, innerRadius: 2.5, outerRadius: 5, fillColor }]);
+        break;
+      case ACTIONS.PARALLELOGRAM:
+        setParallelograms((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor }]);
+        break;
+      case ACTIONS.CONNECTOR:
+        setConnectors((prev) => [...prev, { id, points: [x, y, x, y], fillColor }]);
+        break;
+      case ACTIONS.SPEECH_BUBBLE:
+        setSpeechBubbles((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor }]);
+        break;
+      case ACTIONS.BEZIER:
+        setBeziers((prev) => [...prev, { id, x, y, points: [0, 0, 5, 5], fillColor }]);
+        break;
       case ACTIONS.TEXT:
         setTextboxes((prev) => [
           ...prev,
@@ -230,18 +350,23 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         isPaining.current = false;
         break;
       case ACTIONS.SCRIBBLE:
-      case ACTIONS.ERASER:
         setScribbles((prev) => [
           ...prev,
           {
             id,
             points: [x, y],
-            // keep the color that was selected at start
             strokeColor: penColor,
-            isEraser: action === ACTIONS.ERASER,
           },
         ]);
         break;
+      case ACTIONS.ERASER: {
+        // Click-to-delete: find the topmost shape under cursor and remove it
+        const hit = stage.getIntersection({ x, y });
+        if (hit && hit.id()) {
+          deleteShapeById(hit.id());
+        }
+        break;
+      }
     }
   }
 
@@ -278,8 +403,37 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           ),
         );
         break;
+      case ACTIONS.TRIANGLE:
+        setTriangles((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        break;
+      case ACTIONS.DIAMOND:
+        setDiamonds((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        break;
+      case ACTIONS.PENTAGON:
+        setPentagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        break;
+      case ACTIONS.HEXAGON:
+        setHexagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        break;
+      case ACTIONS.ELLIPSE:
+        setEllipses((prev) => prev.map((e) => e.id === currentShapeId.current ? { ...e, radiusX: Math.abs(x - e.x), radiusY: Math.abs(y - e.y) } : e));
+        break;
+      case ACTIONS.STAR:
+        setStars((prev) => prev.map((s) => s.id === currentShapeId.current ? { ...s, outerRadius: Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5), innerRadius: Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2) } : s));
+        break;
+      case ACTIONS.PARALLELOGRAM:
+        setParallelograms((prev) => prev.map((p) => p.id === currentShapeId.current ? { ...p, width: x - p.x, height: y - p.y } : p));
+        break;
+      case ACTIONS.CONNECTOR:
+        setConnectors((prev) => prev.map((c) => c.id === currentShapeId.current ? { ...c, points: [c.points[0], c.points[1], x, y] } : c));
+        break;
+      case ACTIONS.SPEECH_BUBBLE:
+        setSpeechBubbles((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, width: x - b.x, height: y - b.y } : b));
+        break;
+      case ACTIONS.BEZIER:
+        setBeziers((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, points: [0, 0, x - b.x, y - b.y] } : b));
+        break;
       case ACTIONS.SCRIBBLE:
-      case ACTIONS.ERASER:
         setScribbles((prev) =>
           prev.map((s) =>
             s.id === currentShapeId.current
@@ -288,13 +442,88 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           ),
         );
         break;
+      case ACTIONS.ERASER: {
+        // Freehand eraser: delete any shape under the current pointer position
+        const hit = stage.getIntersection({ x, y });
+        if (hit && hit.id()) {
+          deleteShapeById(hit.id());
+        }
+        break;
+      }
     }
   }
 
   function onClick(e: any) {
     if (action !== ACTIONS.SELECT) return;
-    transformerRef.current.nodes([e.currentTarget]);
+    const node = e.currentTarget;
+    transformerRef.current.nodes([node]);
+    setSelectedShapeId(node.id());
+    setSelectedShapeType(node.getClassName());
   }
+
+  // Delete the currently selected shape
+  const handleDeleteSelected = () => {
+    if (!selectedShapeId) return;
+    setRectangles((p) => p.filter((s) => s.id !== selectedShapeId));
+    setCircles((p) => p.filter((s) => s.id !== selectedShapeId));
+    setArrows((p) => p.filter((s) => s.id !== selectedShapeId));
+    setScribbles((p) => p.filter((s) => s.id !== selectedShapeId));
+    setTextboxes((p) => p.filter((s) => s.id !== selectedShapeId));
+    setTriangles((p) => p.filter((s) => s.id !== selectedShapeId));
+    setDiamonds((p) => p.filter((s) => s.id !== selectedShapeId));
+    setPentagons((p) => p.filter((s) => s.id !== selectedShapeId));
+    setHexagons((p) => p.filter((s) => s.id !== selectedShapeId));
+    setEllipses((p) => p.filter((s) => s.id !== selectedShapeId));
+    setBeziers((p) => p.filter((s) => s.id !== selectedShapeId));
+    setConnectors((p) => p.filter((s) => s.id !== selectedShapeId));
+    setSpeechBubbles((p) => p.filter((s) => s.id !== selectedShapeId));
+    setStars((p) => p.filter((s) => s.id !== selectedShapeId));
+    setParallelograms((p) => p.filter((s) => s.id !== selectedShapeId));
+    transformerRef.current?.nodes([]);
+    setSelectedShapeId(null);
+    setSelectedShapeType(null);
+  };
+
+  // Keyboard delete
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeId) {
+        // Don't fire if user is typing in textarea or input
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        handleDeleteSelected();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedShapeId]);
+
+  // Helper: sync dragged x/y back into state
+  const makeDragEnd = (
+    setter: React.Dispatch<React.SetStateAction<any[]>>
+  ) => (id: string) => (e: any) => {
+    const node = e.target;
+    setter((prev) =>
+      prev.map((s) => s.id === id ? { ...s, x: node.x(), y: node.y() } : s)
+    );
+  };
+
+  const syncRect = makeDragEnd(setRectangles);
+  const syncCircle = makeDragEnd(setCircles);
+  const syncArrow = makeDragEnd(setArrows);
+  const syncTriangle = makeDragEnd(setTriangles);
+  const syncDiamond = makeDragEnd(setDiamonds);
+  const syncPentagon = makeDragEnd(setPentagons);
+  const syncHexagon = makeDragEnd(setHexagons);
+  const syncEllipse = makeDragEnd(setEllipses);
+  const syncStar = makeDragEnd(setStars);
+  const syncParallel = makeDragEnd(setParallelograms);
+  const syncConnector = makeDragEnd(setConnectors);
+  const syncSpeech = makeDragEnd(setSpeechBubbles);
+  const syncBezier = makeDragEnd(setBeziers);
+  const syncScribble = makeDragEnd(setScribbles);
+  const syncTextbox = makeDragEnd(setTextboxes);
 
   const handleExport = () => {
     const uri = stageRef.current.toDataURL();
@@ -335,43 +564,25 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
       // Send session and stroke data
       formData.append("sessionId", currentSessionId!);
       formData.append("strokeData", JSON.stringify({
-        rectangles, circles, arrows, scribbles, textboxes
+        rectangles, circles, arrows, scribbles, textboxes,
+        triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms
       }));
 
       const token = await auth.currentUser?.getIdToken();
 
-      // 1. Analyze Diagram (get mermaid code)
+      // 1. Analyze Diagram (gets both mermaid code and explanation)
       const analyzeRes = await axios.post("http://localhost:5000/api/analyze-diagram", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${token}`
         }
       });
-      const { mermaidCode, analysisId } = analyzeRes.data;
-
-      // 2. Generate Diagram Image
-      const generateRes = await axios.post("http://localhost:5000/api/generate-diagram", { mermaidCode }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const generatedImageUrl = generateRes.data.imageUrl;
-
-      // 3. Explain Diagram
-      const explainFormData = new FormData();
-      explainFormData.append("image", file);
-      explainFormData.append("mermaidCode", mermaidCode);
-      explainFormData.append("analysisId", analysisId);
-
-      const explainRes = await axios.post("http://localhost:5000/api/explain-diagram", explainFormData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const explanation = explainRes.data;
+      const { mermaidCode, explanation } = analyzeRes.data;
 
       setAnalysisData({
+        originalImage: dataUrl,
+        originalImageFile: file, // Store the file so the modal can use it to 'Improve'
         mermaidCode,
-        generatedImageUrl,
         explanation
       });
     } catch (error) {
@@ -388,16 +599,26 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     circles.length === 0 &&
     scribbles.length === 0 &&
     textboxes.length === 0 &&
-    arrows.length === 0;
+    arrows.length === 0 &&
+    triangles.length === 0 &&
+    diamonds.length === 0 &&
+    pentagons.length === 0 &&
+    hexagons.length === 0 &&
+    ellipses.length === 0 &&
+    beziers.length === 0 &&
+    connectors.length === 0 &&
+    speechBubbles.length === 0 &&
+    stars.length === 0 &&
+    parallelograms.length === 0;
 
   return (
     <div className="flex-1 p-6 bg-white dark:bg-[#121212] flex flex-col h-full font-['Inter'] transition-colors">
       {/* TOOLBAR */}
       <div className="flex justify-center mb-6">
-        <div className="flex items-center gap-1 p-1.5 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#303030] shadow-sm dark:shadow-none rounded-xl transition-colors">
+        <div className="flex items-center gap-1 p-1 bg-white dark:bg-[#1a1a1a] border border-gray-200/70 dark:border-white/8 shadow-[0_1px_6px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_6px_rgba(0,0,0,0.3)] rounded-2xl transition-colors">
           <Tooltip text="Draw freehand (Pencil)">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.SCRIBBLE)}
               aria-label="Draw freehand (Pencil)"
             >
@@ -407,7 +628,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
           <Tooltip text="Draw rectangle">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.RECTANGLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.RECTANGLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.RECTANGLE)}
               aria-label="Draw rectangle"
             >
@@ -416,7 +637,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           </Tooltip>
           <Tooltip text="Draw circle">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.CIRCLE ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.CIRCLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.CIRCLE)}
               aria-label="Draw circle"
             >
@@ -425,7 +646,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           </Tooltip>
           <Tooltip text="Draw arrow">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ARROW ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ARROW ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.ARROW)}
               aria-label="Draw arrow"
             >
@@ -434,7 +655,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           </Tooltip>
           <Tooltip text="Add text box">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.TEXT ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.TEXT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.TEXT)}
               aria-label="Add text box"
             >
@@ -443,13 +664,42 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           </Tooltip>
           <Tooltip text="Eraser">
             <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ERASER ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-500 dark:text-gray-400"}`}
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ERASER ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
               onClick={() => setAction(ACTIONS.ERASER)}
               aria-label="Eraser"
             >
               <TbEraser size="1.2rem" />
             </button>
           </Tooltip>
+
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+
+          {/* SHAPES MENU */}
+          <div className="relative">
+            <Tooltip text="More Shapes">
+              <button
+                className={`p-2 rounded-lg transition-colors ${[ACTIONS.TRIANGLE, ACTIONS.DIAMOND, ACTIONS.PENTAGON, ACTIONS.HEXAGON, ACTIONS.STAR, ACTIONS.ELLIPSE, ACTIONS.CONNECTOR, ACTIONS.SPEECH_BUBBLE, ACTIONS.BEZIER, ACTIONS.PARALLELOGRAM].includes(action) ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                onClick={() => setShapesMenuOpen(!shapesMenuOpen)}
+                aria-label="More Shapes"
+              >
+                <BiShapePolygon size="1.2rem" />
+              </button>
+            </Tooltip>
+            {shapesMenuOpen && (
+              <div className="absolute top-full mt-2 left-0 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#303030] rounded-xl shadow-lg p-2 grid grid-cols-3 gap-1 z-50 w-36">
+                <Tooltip text="Triangle"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.TRIANGLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.TRIANGLE); setShapesMenuOpen(false) }}><TbTriangle size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Diamond"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.DIAMOND ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.DIAMOND); setShapesMenuOpen(false) }}><BsDiamond size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Pentagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PENTAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PENTAGON); setShapesMenuOpen(false) }}><TbPentagon size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Hexagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.HEXAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.HEXAGON); setShapesMenuOpen(false) }}><TbHexagon size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Ellipse"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.ELLIPSE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.ELLIPSE); setShapesMenuOpen(false) }}><TbOvalVertical size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Star"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.STAR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.STAR); setShapesMenuOpen(false) }}><FaRegStar size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Connector"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.CONNECTOR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.CONNECTOR); setShapesMenuOpen(false) }}><TbRoute size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Speech Bubble"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.SPEECH_BUBBLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.SPEECH_BUBBLE); setShapesMenuOpen(false) }}><FaRegCommentDots size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Bezier Curve"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.BEZIER ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.BEZIER); setShapesMenuOpen(false) }}><TbVectorBezier2 size="1.2rem" /></button></Tooltip>
+                <Tooltip text="Parallelogram"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PARALLELOGRAM ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PARALLELOGRAM); setShapesMenuOpen(false) }}><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5,19 9,5 19,5 15,19" /></svg></button></Tooltip>
+              </div>
+            )}
+          </div>
 
           <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
 
@@ -482,16 +732,28 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
           <Tooltip text="Export as image">
             <button
-              className="p-2 hover:bg-gray-100 dark:hover:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 rounded-lg transition-colors"
+              className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg transition-colors"
               onClick={handleExport}
               aria-label="Export as image"
             >
               <IoMdDownload size="1.2rem" />
             </button>
           </Tooltip>
+          {/* Delete selected shape button */}
+          {selectedShapeId && (
+            <Tooltip text="Delete selected shape">
+              <button
+                className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 border border-red-100 dark:border-red-500/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                onClick={handleDeleteSelected}
+                aria-label="Delete selected shape"
+              >
+                <MdDeleteOutline size="1.2rem" />
+              </button>
+            </Tooltip>
+          )}
           <Tooltip text="Clear all">
             <button
-              className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
+              className="p-2 text-gray-400 dark:text-gray-500 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-red-500 dark:hover:text-red-400 rounded-lg transition-colors"
               onClick={handleClearAll}
               aria-label="Clear all"
             >
@@ -500,7 +762,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           </Tooltip>
         </div>
         <button
-          className="p-3 ml-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md flex items-center gap-2"
+          className="px-4 py-2 ml-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 transition-colors shadow-sm flex items-center gap-2"
           onClick={handleAnalyzeDiagram}
           disabled={isEmpty || isAnalyzing}
         >
@@ -519,6 +781,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
       <div
         className="flex-1 relative border-2 border-dashed border-gray-200 dark:border-[#333] rounded-3xl overflow-hidden bg-white dark:bg-[#1e1e1e] transition-colors shadow-inner"
         ref={containerRef}
+        style={{ cursor: action === ACTIONS.ERASER ? 'crosshair' : 'default' }}
       >
         <Stage
           ref={stageRef}
@@ -535,62 +798,115 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
               fill={getCssVar("--canvas-bg", "#ffffff")}
               fillPatternImage={gridPattern as any}
               fillPatternRepeat="repeat"
-              onClick={() => transformerRef.current.nodes([])}
+              onClick={() => { transformerRef.current.nodes([]); setSelectedShapeId(null); setSelectedShapeType(null); }}
             />
 
             {rectangles.map((rect) => (
               <Rect
                 key={rect.id}
+                id={rect.id}
                 {...rect}
-                stroke={strokeColor}
-                strokeWidth={2}
+                stroke={selectedShapeId === rect.id ? '#3b82f6' : strokeColor}
+                strokeWidth={selectedShapeId === rect.id ? 2.5 : 2}
                 fill={rect.fillColor}
                 draggable={isDraggable}
                 onClick={onClick}
+                onDragEnd={syncRect(rect.id)}
               />
             ))}
             {circles.map((circle) => (
               <Circle
                 key={circle.id}
+                id={circle.id}
                 {...circle}
-                stroke={strokeColor}
-                strokeWidth={2}
+                stroke={selectedShapeId === circle.id ? '#3b82f6' : strokeColor}
+                strokeWidth={selectedShapeId === circle.id ? 2.5 : 2}
                 fill={circle.fillColor}
                 draggable={isDraggable}
                 onClick={onClick}
+                onDragEnd={syncCircle(circle.id)}
               />
             ))}
             {arrows.map((arrow) => (
               <Arrow
                 key={arrow.id}
+                id={arrow.id}
                 {...arrow}
-                stroke={strokeColor}
-                strokeWidth={2}
+                stroke={selectedShapeId === arrow.id ? '#3b82f6' : strokeColor}
+                strokeWidth={selectedShapeId === arrow.id ? 2.5 : 2}
                 fill={arrow.fillColor}
                 draggable={isDraggable}
                 onClick={onClick}
+                onDragEnd={syncArrow(arrow.id)}
               />
+            ))}
+            {triangles.map((t) => (
+              <RegularPolygon key={t.id} id={t.id} sides={3} {...t} stroke={selectedShapeId === t.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === t.id ? 2.5 : 2} fill={t.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncTriangle(t.id)} />
+            ))}
+            {diamonds.map((d) => (
+              <RegularPolygon key={d.id} id={d.id} sides={4} {...d} stroke={selectedShapeId === d.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === d.id ? 2.5 : 2} fill={d.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncDiamond(d.id)} />
+            ))}
+            {pentagons.map((p) => (
+              <RegularPolygon key={p.id} id={p.id} sides={5} {...p} stroke={selectedShapeId === p.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === p.id ? 2.5 : 2} fill={p.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncPentagon(p.id)} />
+            ))}
+            {hexagons.map((h) => (
+              <RegularPolygon key={h.id} id={h.id} sides={6} {...h} stroke={selectedShapeId === h.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === h.id ? 2.5 : 2} fill={h.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncHexagon(h.id)} />
+            ))}
+            {ellipses.map((e) => (
+              <Ellipse key={e.id} id={e.id} {...e} stroke={selectedShapeId === e.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === e.id ? 2.5 : 2} fill={e.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncEllipse(e.id)} />
+            ))}
+            {stars.map((s) => (
+              <Star key={s.id} id={s.id} numPoints={5} {...s} stroke={selectedShapeId === s.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === s.id ? 2.5 : 2} fill={s.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncStar(s.id)} />
+            ))}
+            {parallelograms.map((p) => {
+              const skew = Math.abs(p.height) * 0.3;
+              const w = p.width;
+              const h = p.height;
+              return (
+                <Line
+                  key={p.id}
+                  id={p.id}
+                  x={p.x}
+                  y={p.y}
+                  points={[0, h, w, h, w - skew, 0, -skew, 0]}
+                  closed
+                  fill={p.fillColor}
+                  stroke={selectedShapeId === p.id ? '#3b82f6' : strokeColor}
+                  strokeWidth={selectedShapeId === p.id ? 2.5 : 2}
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncParallel(p.id)}
+                />
+              );
+            })}
+            {connectors.map((c) => (
+              <Path key={c.id} id={c.id} data={`M ${c.points[0]} ${c.points[1]} L ${c.points[0]} ${c.points[3]} L ${c.points[2]} ${c.points[3]}`} stroke={selectedShapeId === c.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === c.id ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncConnector(c.id)} />
+            ))}
+            {speechBubbles.map((b) => (
+              <Path key={b.id} id={b.id} x={b.x} y={b.y} data={`M 0 0 L ${b.width} 0 L ${b.width} ${b.height * 0.8} L ${b.width * 0.6} ${b.height * 0.8} L ${b.width * 0.5} ${b.height} L ${b.width * 0.4} ${b.height * 0.8} L 0 ${b.height * 0.8} Z`} fill={b.fillColor} stroke={selectedShapeId === b.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === b.id ? 2.5 : 2} draggable={isDraggable} onClick={onClick} onDragEnd={syncSpeech(b.id)} />
+            ))}
+            {beziers.map((b) => (
+              <Path key={b.id} id={b.id} x={b.x} y={b.y} data={`M 0 0 Q ${b.points[2] / 2 + 50} ${b.points[3] / 2 - 50} ${b.points[2]} ${b.points[3]}`} stroke={selectedShapeId === b.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === b.id ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncBezier(b.id)} />
             ))}
             {scribbles.map((s) => (
               <Line
                 key={s.id}
+                id={s.id}
                 {...s}
-                stroke={
-                  s.isEraser ? getCssVar("--canvas-bg", "#fff") : s.strokeColor
-                }
-                strokeWidth={s.isEraser ? 25 : 2}
+                stroke={s.strokeColor}
+                strokeWidth={2}
                 lineCap="round"
                 lineJoin="round"
-                globalCompositeOperation={
-                  s.isEraser ? "destination-out" : "source-over"
-                }
+                globalCompositeOperation="source-over"
                 draggable={isDraggable}
                 onClick={onClick}
+                onDragEnd={syncScribble(s.id)}
               />
             ))}
             {textboxes.map((text) => (
               <Text
                 key={text.id}
+                id={text.id}
                 {...text}
                 text={editingId === text.id ? "" : text.text}
                 fontFamily="'Inter', sans-serif"
@@ -599,6 +915,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
                 padding={5}
                 draggable={isDraggable}
                 onClick={onClick}
+                onDragEnd={syncTextbox(text.id)}
                 onDblClick={(e) => {
                   const stageBox = stageRef.current
                     .container()

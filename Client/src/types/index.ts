@@ -10,6 +10,7 @@ export interface ExplainResponse {
   purpose: string;
   components: string[];
   relationships: string[];
+  steps: string[];
   keyInsights: string[];
 }
 
@@ -26,7 +27,8 @@ export interface ChatResponse {
 
 export interface DiagramData {
   originalImage?: string;
+  originalImageFile?: File; // Adding this to help with 'improve' requests later
   mermaidCode: string;
-  generatedImageUrl: string;
+  generatedImageUrl?: string;
   explanation: ExplainResponse;
 }

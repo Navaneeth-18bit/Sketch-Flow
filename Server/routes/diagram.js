@@ -3,6 +3,7 @@ const router = express.Router();
 const rateLimit = require("express-rate-limit");
 const {
   analyzeDiagramHandler,
+  improveDiagramHandler,
   generateDiagramHandler,
   explainDiagramHandler,
   chatWithDiagramHandler,
@@ -20,6 +21,7 @@ const apiLimiter = rateLimit({
 
 // Operations restricted to Teacher and Admin
 router.post("/analyze-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), analyzeDiagramHandler);
+router.post("/improve-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), improveDiagramHandler);
 router.post("/generate-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), generateDiagramHandler);
 router.post("/explain-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), explainDiagramHandler);
 

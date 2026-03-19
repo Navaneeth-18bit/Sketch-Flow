@@ -24,6 +24,33 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
   }, [messages]);
 
   useEffect(() => {
+    const handleDiagramContext = async (e: any) => {
+      const { message, imageFile } = e.detail;
+
+      let base64 = undefined;
+      let fileName = undefined;
+      if (imageFile) {
+        base64 = await convertToBase64(imageFile);
+        fileName = imageFile.name;
+      }
+
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: message,
+        image: base64,
+        fileName: fileName,
+      };
+
+      setMessages((prev) => [...prev, userMessage]);
+      await sendToAI(userMessage);
+    };
+
+    window.addEventListener("injectDiagramContext", handleDiagramContext);
+    return () => window.removeEventListener("injectDiagramContext", handleDiagramContext);
+  }, [activeSessionId, messages]); // messages needed for sendToAI history context
+
+  useEffect(() => {
     const fetchHistory = async () => {
       if (!activeSessionId) {
         setMessages([]);

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X, Copy, Download, MessageSquare, Loader2 } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { DiagramData, ExplainResponse } from '../types';
-import DiagramChatWidget from './DiagramChatWidget';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Download, Loader2, PlayCircle, Sparkles } from 'lucide-react';
+import mermaid from 'mermaid';
+import axios from 'axios';
+import { auth } from '../utils/firebase';
+import { DiagramData } from '../types';
 
 interface DiagramAnalysisModalProps {
   isOpen: boolean;
@@ -16,188 +16,301 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
   isOpen,
   onClose,
   data,
-  loading,
+  loading: initialLoading,
 }) => {
-  const [activeTab, setActiveTab] = useState<'diagram' | 'code' | 'explanation'>('diagram');
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [currentData, setCurrentData] = useState<DiagramData | null>(null);
+  const [svgContent, setSvgContent] = useState<string>('');
+  const [isImproving, setIsImproving] = useState(false);
+  const [errorObj, setErrorObj] = useState<string | null>(null);
+
+  const [isPromptingImprovement, setIsPromptingImprovement] = useState(false);
+  const [improvementPrompt, setImprovementPrompt] = useState("");
+
+  useEffect(() => {
+    if (data) {
+      setCurrentData(data);
+      setErrorObj(null);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (currentData?.mermaidCode) {
+      mermaid.initialize({ startOnLoad: false, theme: 'default' });
+      mermaid.render('diagram-preview', currentData.mermaidCode)
+        .then((result) => {
+          setSvgContent(result.svg);
+        })
+        .catch((e) => {
+          console.error("Mermaid parsing error", e);
+          setSvgContent(`<div class="text-red-500 p-4">Error rendering diagram: ${e.message}</div>`);
+        });
+    }
+  }, [currentData?.mermaidCode]);
 
   if (!isOpen) return null;
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert('Copied to clipboard!');
+  const handleImprove = async () => {
+    if (!currentData?.originalImageFile || !currentData?.mermaidCode) return;
+
+    // Only send the custom prompt if the user provided one, otherwise fall back to a generic prompt.
+    const finalPrompt = improvementPrompt.trim() !== ""
+      ? improvementPrompt
+      : "Improve diagram clarity, optimize flow, suggest better structure, and add missing steps if needed";
+
+    setIsImproving(true);
+    setIsPromptingImprovement(false);
+    setErrorObj(null);
+    try {
+      const formData = new FormData();
+      formData.append("image", currentData.originalImageFile);
+      formData.append("mermaidCode", currentData.mermaidCode);
+      formData.append("prompt", finalPrompt);
+
+      const token = await auth.currentUser?.getIdToken();
+      const response = await axios.post("http://localhost:5000/api/improve-diagram", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setCurrentData({
+        ...currentData,
+        mermaidCode: response.data.mermaidCode,
+        explanation: response.data.explanation
+      });
+      setImprovementPrompt("");
+    } catch (err: any) {
+      setErrorObj(err.response?.data?.error || err.message || "Failed to improve diagram");
+    } finally {
+      setIsImproving(false);
+    }
   };
 
-  const downloadImage = () => {
-    if (!data?.generatedImageUrl) return;
-    const link = document.createElement('a');
-    link.href = data.generatedImageUrl;
-    link.download = 'diagram.png';
-    link.click();
+  const continueToChatbot = () => {
+    if (!currentData?.explanation) return;
+
+    const contextMsg = `Here is my hand-drawn diagram and the AI-generated diagram with explanation. Help me understand it further.\n\n### Explanation\n${currentData.explanation.purpose}`;
+
+    const event = new CustomEvent("injectDiagramContext", {
+      detail: {
+        message: contextMsg,
+        imageFile: currentData.originalImageFile
+      }
+    });
+    window.dispatchEvent(event);
+    onClose();
   };
 
-  const downloadExplanation = () => {
-    if (!data?.explanation) return;
-    const blob = new Blob([JSON.stringify(data.explanation, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'explanation.json';
-    link.click();
+  const handleExport = (format: 'svg' | 'png') => {
+    if (!svgContent) return;
+    if (format === 'svg') {
+      const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'ai-diagram.svg';
+      link.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'png') {
+      // Create a canvas to convert SVG to PNG
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      const svg = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svg);
+      img.onload = () => {
+        canvas.width = img.width || 800;
+        canvas.height = img.height || 600;
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          const pngUrl = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.href = pngUrl;
+          link.download = 'ai-diagram.png';
+          link.click();
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    }
   };
+
+  const isLoading = initialLoading || isImproving;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="relative w-full max-w-5xl h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 transition-opacity backdrop-blur-sm">
+      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-[#121212] rounded-2xl shadow-2xl flex flex-col overflow-hidden font-['Inter']">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-800">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">Diagram Analysis</h2>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-[#1a1a1a]">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-500" />
+              AI Diagram Analysis
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Converted hand-drawn sketch to clear architecture</p>
+          </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-200 dark:hover:bg-[#333] rounded-full transition-colors text-gray-500"
           >
-            <X className="w-6 h-6 text-gray-500" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
+          {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
-              <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-              <p className="text-gray-500">Analyzing diagram...</p>
+              <div className="relative">
+                <Loader2 className="w-14 h-14 text-blue-500 animate-spin" />
+              </div>
+              <p className="text-gray-600 dark:text-gray-300 font-medium text-lg">
+                {isImproving ? "AI is refining your diagram..." : "Analyzing diagram structure..."}
+              </p>
             </div>
-          ) : data ? (
-            <div className="space-y-6">
-              {/* Tabs */}
-              <div className="flex space-x-4 border-b dark:border-gray-800">
-                {(['diagram', 'code', 'explanation'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`pb-2 px-1 capitalize transition-colors ${
-                      activeTab === tab
-                        ? 'border-b-2 border-blue-500 text-blue-500'
-                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+          ) : currentData ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
+
+              {/* Left Column: Visual Rendering */}
+              <div className="flex flex-col h-full bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#333] overflow-hidden">
+                <div className="p-4 border-b border-gray-100 dark:border-[#333] bg-white dark:bg-[#1e1e1e] flex justify-between items-center">
+                  <h3 className="font-semibold text-gray-700 dark:text-gray-200">AI Generated Diagram</h3>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleExport('svg')} className="text-xs bg-gray-100 hover:bg-gray-200 dark:bg-[#333] dark:hover:bg-[#444] text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
+                      SVG
+                    </button>
+                    <button onClick={() => handleExport('png')} className="text-xs bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
+                      PNG
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-6 flex items-center justify-center min-h-[400px]">
+                  <div
+                    dangerouslySetInnerHTML={{ __html: svgContent }}
+                    className="mermaid-wrapper w-full flex justify-center [&>svg]:max-w-full [&>svg]:h-auto drop-shadow-sm transition-all"
+                  />
+                </div>
               </div>
 
-              {/* Tab Panels */}
-              <div className="min-h-[400px]">
-                {activeTab === 'diagram' && (
-                  <div className="flex flex-col items-center space-y-4">
-                    <img
-                      src={data.generatedImageUrl}
-                      alt="Generated Diagram"
-                      className="max-w-full h-auto rounded-lg shadow-md"
-                    />
-                    <button
-                      onClick={downloadImage}
-                      className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download Image</span>
-                    </button>
+              {/* Right Column: Explanation */}
+              <div className="flex flex-col space-y-6 h-full overflow-y-auto pr-2 custom-scrollbar">
+
+                {errorObj && (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900">
+                    {errorObj}
                   </div>
                 )}
 
-                {activeTab === 'code' && (
-                  <div className="relative">
-                    <button
-                      onClick={() => copyToClipboard(data.mermaidCode)}
-                      className="absolute top-4 right-4 p-2 bg-gray-800 text-white rounded hover:bg-gray-700 z-10"
-                      title="Copy Code"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <SyntaxHighlighter
-                      language="mermaid"
-                      style={vscDarkPlus}
-                      className="rounded-lg !m-0"
-                    >
-                      {data.mermaidCode}
-                    </SyntaxHighlighter>
+                <div>
+                  <h3 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 mb-2">Technical Breakdown</h3>
+                  <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-lg">
+                    {currentData.explanation?.purpose}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm">1</span>
+                    Key Components
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {currentData.explanation?.components?.map((c, i) => (
+                      <span key={i} className="px-3 py-1.5 bg-white dark:bg-[#252525] border border-gray-200 dark:border-[#333] rounded-lg text-sm text-gray-700 dark:text-gray-300 shadow-sm">{c}</span>
+                    ))}
                   </div>
-                )}
+                </div>
 
-                {activeTab === 'explanation' && (
-                  <div className="space-y-6 text-gray-800 dark:text-gray-200">
-                    <div className="flex justify-between items-start">
-                      <h3 className="text-lg font-semibold">Technical Breakdown</h3>
-                      <button
-                        onClick={downloadExplanation}
-                        className="flex items-center space-x-2 text-blue-500 hover:text-blue-600"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Download JSON</span>
-                      </button>
-                    </div>
-                    
-                    <section>
-                      <h4 className="font-bold text-blue-500 mb-2">Purpose</h4>
-                      <p>{data.explanation.purpose}</p>
-                    </section>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <section>
-                        <h4 className="font-bold text-blue-500 mb-2">Components</h4>
-                        <ul className="list-disc list-inside space-y-1">
-                          {data.explanation.components.map((c, i) => (
-                            <li key={i}>{c}</li>
-                          ))}
-                        </ul>
-                      </section>
-                      <section>
-                        <h4 className="font-bold text-blue-500 mb-2">Relationships</h4>
-                        <ul className="list-disc list-inside space-y-1">
-                          {data.explanation.relationships.map((r, i) => (
-                            <li key={i}>{r}</li>
-                          ))}
-                        </ul>
-                      </section>
-                    </div>
-
-                    <section>
-                      <h4 className="font-bold text-blue-500 mb-2">Key Insights</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {data.explanation.keyInsights.map((insight, i) => (
-                          <div key={i} className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                            {insight}
-                          </div>
-                        ))}
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm">2</span>
+                    Step-by-Step Flow
+                  </h4>
+                  <div className="space-y-3">
+                    {currentData.explanation?.steps?.map((step, i) => (
+                      <div key={i} className="flex gap-3 bg-white dark:bg-[#252525] p-3 rounded-xl border border-gray-100 dark:border-[#333] shadow-sm">
+                        <div className="text-indigo-500 font-medium">Step {i + 1}</div>
+                        <div className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">{step}</div>
                       </div>
-                    </section>
+                    ))}
                   </div>
-                )}
+                </div>
+
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              No analysis data available.
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              No analysis data available. Please draw a diagram and click analyze.
             </div>
           )}
         </div>
 
-        {/* Floating Chat Button */}
-        <button
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          className="absolute bottom-6 right-6 p-4 bg-blue-600 text-white rounded-full shadow-xl hover:bg-blue-700 transition-all transform hover:scale-110 active:scale-95 z-50"
-        >
-          <MessageSquare className="w-6 h-6" />
-        </button>
+        {/* Footer Actions */}
+        <div className="p-5 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-[#1a1a1a] flex flex-wrap justify-between items-center gap-4 shrink-0 transition-colors">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 rounded-xl border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] transition-colors font-medium bg-white dark:bg-transparent"
+          >
+            Close
+          </button>
 
-        {/* Chat Widget Overlay */}
-        {isChatOpen && data && (
-          <div className="absolute bottom-24 right-6 w-80 h-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border dark:border-gray-700 overflow-hidden z-50">
-            <DiagramChatWidget
-              diagramData={data}
-              onClose={() => setIsChatOpen(false)}
-            />
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto flex-1 justify-end">
+            {isPromptingImprovement ? (
+              <div className="flex items-center gap-2 w-full max-w-lg">
+                <input
+                  type="text"
+                  value={improvementPrompt}
+                  onChange={(e) => setImprovementPrompt(e.target.value)}
+                  placeholder="How can I improve the diagram?"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#252525] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleImprove();
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={handleImprove}
+                  disabled={isLoading || !currentData || improvementPrompt.trim() === ""}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors font-medium flex-shrink-0 disabled:opacity-50"
+                >
+                  Submit
+                </button>
+                <button
+                  onClick={() => {
+                    setIsPromptingImprovement(false);
+                    setImprovementPrompt("");
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] transition-colors font-medium flex-shrink-0 bg-white dark:bg-transparent"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsPromptingImprovement(true)}
+                  disabled={isLoading || !currentData}
+                  className="px-6 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Ask AI to Improve Diagram
+                </button>
+
+                <button
+                  onClick={continueToChatbot}
+                  disabled={isLoading || !currentData}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  Continue to Chatbot
+                </button>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
