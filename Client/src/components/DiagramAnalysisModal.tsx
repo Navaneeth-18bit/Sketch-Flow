@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Download, Loader2, PlayCircle, Sparkles } from 'lucide-react';
+import { X, Download, Loader2, PlayCircle, Sparkles, Copy, Check } from 'lucide-react';
 import mermaid from 'mermaid';
 import axios from 'axios';
 import { auth } from '../utils/firebase';
@@ -10,6 +10,7 @@ interface DiagramAnalysisModalProps {
   onClose: () => void;
   data: DiagramData | null;
   loading: boolean;
+  onInsertImage?: (src: string) => void;
 }
 
 const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
@@ -17,6 +18,7 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
   onClose,
   data,
   loading: initialLoading,
+  onInsertImage,
 }) => {
   const [currentData, setCurrentData] = useState<DiagramData | null>(null);
   const [svgContent, setSvgContent] = useState<string>('');
@@ -25,6 +27,7 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
 
   const [isPromptingImprovement, setIsPromptingImprovement] = useState(false);
   const [improvementPrompt, setImprovementPrompt] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (data) {
@@ -137,6 +140,149 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
     }
   };
 
+  const handleCopyDiagram = async () => {
+    if (!svgContent) return;
+    
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgContent, "image/svg+xml");
+      const svgElement = doc.documentElement;
+      
+      // Ensure xmlns is present
+      if (!svgElement.getAttribute('xmlns')) {
+        svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      }
+      
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgElement);
+      
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      // Use a Data URI instead of Blob URL to avoid tainting the canvas
+      const svgDataUrl = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(svgString)));
+      
+      img.onload = () => {
+        let width = 800;
+        let height = 600;
+        
+        // Try to get dimensions from the actual SVG in DOM for accuracy
+        const svgInDom = document.querySelector('.mermaid-wrapper svg');
+        const viewBox = svgInDom?.getAttribute('viewBox') || svgElement.getAttribute('viewBox');
+        
+        if (viewBox) {
+          const parts = viewBox.split(/[ ,]+/).filter(Boolean);
+          if (parts.length === 4) {
+            width = parseFloat(parts[2]);
+            height = parseFloat(parts[3]);
+          }
+        } else {
+          width = parseFloat(svgInDom?.getAttribute('width') || svgElement.getAttribute('width') || '800');
+          height = parseFloat(svgInDom?.getAttribute('height') || svgElement.getAttribute('height') || '600');
+        }
+
+        // Scale up for better quality
+        const scale = Math.max(1, 1200 / width);
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.scale(scale, scale);
+          // Explicitly pass width and height to ensure correct aspect ratio
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob(async (blob) => {
+            if (blob) {
+              try {
+                if (navigator.clipboard && navigator.clipboard.write) {
+                  const item = new ClipboardItem({ 'image/png': blob });
+                  await navigator.clipboard.write([item]);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } else {
+                  throw new Error("Clipboard API not available");
+                }
+              } catch (err) {
+                console.error("Clipboard copy failed:", err);
+                alert("Could not copy to clipboard. Try using the PNG download button or 'Insert to Canvas'.");
+              }
+            }
+          }, 'image/png');
+        }
+      };
+      
+      img.onerror = (err) => {
+        console.error("Image load failed for SVG:", err);
+      };
+      
+      img.src = svgDataUrl;
+    } catch (e) {
+      console.error("Copy diagram failed:", e);
+    }
+  };
+
+  const handleInsertToCanvas = () => {
+    if (!svgContent || !onInsertImage) return;
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgContent, "image/svg+xml");
+      const svgElement = doc.documentElement;
+      
+      if (!svgElement.getAttribute('xmlns')) {
+        svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      }
+      
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgElement);
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      const svgDataUrl = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(svgString)));
+
+      img.onload = () => {
+        let width = 800;
+        let height = 600;
+        
+        const svgInDom = document.querySelector('.mermaid-wrapper svg');
+        const viewBox = svgInDom?.getAttribute('viewBox') || svgElement.getAttribute('viewBox');
+        
+        if (viewBox) {
+          const parts = viewBox.split(/[ ,]+/).filter(Boolean);
+          if (parts.length === 4) {
+            width = parseFloat(parts[2]);
+            height = parseFloat(parts[3]);
+          }
+        } else {
+          width = parseFloat(svgInDom?.getAttribute('width') || svgElement.getAttribute('width') || '800');
+          height = parseFloat(svgInDom?.getAttribute('height') || svgElement.getAttribute('height') || '600');
+        }
+
+        // Use a slightly larger scale for crisp canvas insertion
+        const scale = 2; 
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, width, height);
+          const pngDataUrl = canvas.toDataURL('image/png');
+          onInsertImage(pngDataUrl);
+          onClose();
+        }
+      };
+      img.src = svgDataUrl;
+    } catch (e) {
+      console.error("Insert to canvas failed:", e);
+    }
+  };
+
   const isLoading = initialLoading || isImproving;
 
   return (
@@ -178,6 +324,24 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
                 <div className="p-4 border-b border-gray-100 dark:border-[#333] bg-white dark:bg-[#1e1e1e] flex justify-between items-center">
                   <h3 className="font-semibold text-gray-700 dark:text-gray-200">AI Generated Diagram</h3>
                   <div className="flex gap-2">
+                    <button 
+                      onClick={handleCopyDiagram} 
+                      className="text-xs bg-gray-100 hover:bg-gray-200 dark:bg-[#333] dark:hover:bg-[#444] text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-gray-200 dark:border-[#444]"
+                      title="Copy Diagram Image"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copied ? "Copied!" : "Copy"}
+                    </button>
+                    {onInsertImage && (
+                      <button 
+                        onClick={handleInsertToCanvas} 
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
+                        title="Insert directly onto canvas"
+                      >
+                        <PlayCircle className="w-3.5 h-3.5" />
+                        Insert to Canvas
+                      </button>
+                    )}
                     <button onClick={() => handleExport('svg')} className="text-xs bg-gray-100 hover:bg-gray-200 dark:bg-[#333] dark:hover:bg-[#444] text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
                       SVG
                     </button>

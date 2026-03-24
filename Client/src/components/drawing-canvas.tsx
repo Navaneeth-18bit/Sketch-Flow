@@ -1,7 +1,7 @@
 import { TbRectangle, TbEraser, TbTriangle, TbPentagon, TbHexagon, TbOvalVertical, TbVectorBezier2, TbRoute } from "react-icons/tb";
 import { IoMdDownload, IoMdTrash } from "react-icons/io";
 import { FaLongArrowAltRight, FaRegStar } from "react-icons/fa";
-import { LuPencil, LuType } from "react-icons/lu";
+import { LuPencil, LuType, LuUndo2, LuRedo2, LuHand, LuInfinity, LuFile } from "react-icons/lu";
 import { GiArrowCursor } from "react-icons/gi";
 import { FaRegCircle, FaRegCommentDots } from "react-icons/fa6";
 import { BsDiamond } from "react-icons/bs";
@@ -20,15 +20,20 @@ import {
   Ellipse,
   Path,
   Star,
+  Group,
+  Image,
 } from "react-konva";
-import { useRef, useState, useEffect } from "react";
+import mermaid from "mermaid";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
+import rough from "roughjs";
 import { ACTIONS } from "../constants";
 import { auth } from "../utils/firebase";
 import Tooltip from "./Tooltip";
 import DiagramAnalysisModal from "./DiagramAnalysisModal";
 import { DiagramData } from "../types";
 import axios from "axios";
+import { getBoundingBox, renderToOffscreenCanvas } from "../utils/canvasUtils";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
@@ -36,6 +41,217 @@ interface CanvasProps {
   activeSessionId: string | null;
   onNewSession: () => void;
 }
+
+const SloppyShape = ({ type, x, y, width, height, radius, radiusX, radiusY, innerRadius, outerRadius, stroke, fillColor, strokeWidth, sloppiness, seed, isSelected, draggable, onClick, onDragEnd, id }: any) => {
+  const isSloppy = sloppiness > 0;
+  const nodeRef = useRef<any>(null);
+
+  // Hardened coordinate/dimension guards
+  const safeX = isNaN(x) ? 0 : x;
+  const safeY = isNaN(y) ? 0 : y;
+  const safeW = isNaN(width) ? 10 : width;
+  const safeH = isNaN(height) ? 10 : height;
+  const safeR = isNaN(radius) ? 5 : radius;
+  const safeRX = isNaN(radiusX) ? 5 : radiusX;
+  const safeRY = isNaN(radiusY) ? 5 : radiusY;
+  const safeIR = isNaN(innerRadius) ? 2.5 : innerRadius;
+  const safeOR = isNaN(outerRadius) ? 5 : outerRadius;
+
+  const finalStroke = isSelected ? '#3b82f6' : (stroke || '#000');
+  const finalStrokeWidth = isSelected ? (strokeWidth || 2) + 0.5 : (strokeWidth || 2);
+  const finalFill = fillColor === 'transparent' ? undefined : fillColor;
+
+  const drawable = useMemo(() => {
+    if (!isSloppy) return null;
+    const gen = rough.generator();
+    const options = {
+      stroke: finalStroke,
+      fill: finalFill,
+      strokeWidth: finalStrokeWidth,
+      roughness: sloppiness,
+      fillStyle: 'hachure',
+      seed: seed || 1,
+    };
+
+    if (type === 'rectangle') return gen.rectangle(0, 0, width, height, options);
+    if (type === 'circle') return gen.circle(0, 0, radius * 2, options);
+    if (type === 'ellipse') return gen.ellipse(0, 0, radiusX * 2, radiusY * 2, options);
+    if (type === 'triangle' || type === 'diamond' || type === 'pentagon' || type === 'hexagon') {
+      const sides = type === 'triangle' ? 3 : type === 'diamond' ? 4 : type === 'pentagon' ? 5 : 6;
+      const pts: [number, number][] = [];
+      for (let i = 0; i < sides; i++) {
+        pts.push([
+          (radius || 0) * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2),
+          (radius || 0) * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2)
+        ]);
+      }
+      return gen.polygon(pts, options);
+    }
+    if (type === 'star') {
+      const pts: [number, number][] = [];
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? (outerRadius || 0) : (innerRadius || 0);
+        pts.push([
+          r * Math.cos(i * Math.PI / 5 - Math.PI / 2),
+          r * Math.sin(i * Math.PI / 5 - Math.PI / 2)
+        ]);
+      }
+      return gen.polygon(pts, options);
+    }
+    if (type === 'parallelogram') {
+      const skew = Math.abs(height) * 0.3;
+      return gen.polygon([[0, height], [width, height], [width - skew, 0], [-skew, 0]], options);
+    }
+    return null;
+  }, [type, width, height, radius, radiusX, radiusY, innerRadius, outerRadius, finalStroke, finalFill, finalStrokeWidth, sloppiness, seed, isSloppy]);
+
+  const pathData = useMemo(() => {
+    try {
+      if (type === 'rectangle') return `M 0 0 L ${width || 0} 0 L ${width || 0} ${height || 0} L 0 ${height || 0} Z`;
+      if (type === 'circle') {
+        const r = radius || 0;
+        return `M ${-r} 0 A ${r} ${r} 0 1 0 ${r} 0 A ${r} ${r} 0 1 0 ${-r} 0 Z`;
+      }
+      if (type === 'ellipse') {
+        const rx = radiusX || 0; const ry = radiusY || 0;
+        return `M ${-rx} 0 A ${rx} ${ry} 0 1 0 ${rx} 0 A ${rx} ${ry} 0 1 0 ${-rx} 0 Z`;
+      }
+      if (type === 'parallelogram') {
+        const w = width || 0; const h = height || 0; const skew = Math.abs(h) * 0.3;
+        return `M 0 ${h} L ${w} ${h} L ${w - skew} 0 L ${-skew} 0 Z`;
+      }
+      if (type === 'triangle' || type === 'diamond' || type === 'pentagon' || type === 'hexagon') {
+        const r = radius || 0;
+        const sides = type === 'triangle' ? 3 : type === 'diamond' ? 4 : type === 'pentagon' ? 5 : 6;
+        let p = "";
+        for (let i = 0; i < sides; i++) {
+          const px = r * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2);
+          const py = r * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2);
+          p += `${i === 0 ? 'M' : 'L'} ${px} ${py} `;
+        }
+        return p + " Z";
+      }
+      if (type === 'star') {
+        const or = safeOR; const ir = safeIR;
+        let p = "";
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 === 0 ? or : ir;
+          const px = r * Math.cos(i * Math.PI / 5 - Math.PI / 2);
+          const py = r * Math.sin(i * Math.PI / 5 - Math.PI / 2);
+          p += `${i === 0 ? 'M' : 'L'} ${px} ${py} `;
+        }
+        return p + " Z";
+      }
+    } catch (e) { console.error(e); }
+    return "";
+  }, [type, safeW, safeH, safeR, safeRX, safeRY, safeOR, safeIR]);
+
+  // Performance: cache non-active shapes
+  useEffect(() => {
+    if (nodeRef.current && !isSelected && !draggable && isSloppy) {
+      const timer = setTimeout(() => {
+        if (nodeRef.current) {
+          nodeRef.current.cache({
+            offset: 10, // padding for rough edges
+          });
+          nodeRef.current.getLayer()?.batchDraw();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    } else if (nodeRef.current) {
+      nodeRef.current.clearCache();
+    }
+  }, [isSelected, draggable, isSloppy, drawable, pathData, finalFill, finalStroke, finalStrokeWidth]);
+
+  const dragBoundFunc = (pos: { x: number, y: number }) => {
+    if (isNaN(pos.x) || isNaN(pos.y)) {
+      return nodeRef.current ? nodeRef.current.absolutePosition() : pos;
+    }
+    return pos;
+  };
+
+  if (!isSloppy) {
+    if (type === 'rectangle') return <Rect ref={nodeRef} x={safeX} y={safeY} width={safeW} height={safeH} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'circle') return <Circle ref={nodeRef} x={safeX} y={safeY} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'ellipse') return <Ellipse ref={nodeRef} x={safeX} y={safeY} radiusX={safeRX} radiusY={safeRY} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'triangle') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={3} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'diamond') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={4} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'pentagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={5} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'hexagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={6} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'star') return <Star ref={nodeRef} x={safeX} y={safeY} numPoints={5} innerRadius={safeIR} outerRadius={safeOR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    if (type === 'parallelogram') {
+      const skew = Math.abs(safeH) * 0.3;
+      return <Line ref={nodeRef} x={safeX} y={safeY} points={[0, safeH, safeW, safeH, safeW - skew, 0, -skew, 0]} closed fill={finalFill} stroke={finalStroke} strokeWidth={finalStrokeWidth} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+    }
+  }
+
+  return (
+    <Path
+      ref={nodeRef}
+      x={safeX}
+      y={safeY}
+      draggable={draggable}
+      onClick={onClick}
+      onTap={onClick}
+      onDragEnd={onDragEnd}
+      dragBoundFunc={dragBoundFunc}
+      id={id}
+      name="selectable-shape"
+      data={pathData}
+      stroke={finalStroke}
+      strokeWidth={finalStrokeWidth}
+      fill={finalFill || "transparent"}
+      sceneFunc={(context: any, shape: any) => {
+        if (context.isHit) {
+          context.fillStrokeShape(shape);
+          return;
+        }
+        if (drawable) {
+          const roughCanvas = rough.canvas(context._context);
+          roughCanvas.draw(drawable);
+        }
+      }}
+    />
+  );
+};
+
+const ImageItem = ({ s, isSelected, draggable, onClick, onDragEnd }: any) => {
+  const safeX = isNaN(s.x) ? 0 : s.x;
+  const safeY = isNaN(s.y) ? 0 : s.y;
+  const safeW = isNaN(s.width) ? 100 : s.width;
+  const safeH = isNaN(s.height) ? 100 : s.height;
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const imageRef = useRef<any>(null);
+
+  useEffect(() => {
+    const img = new window.Image();
+    img.src = s.src;
+    img.onload = () => {
+      setImage(img);
+    };
+  }, [s.src]);
+
+  return (
+    <Image
+      ref={imageRef}
+      id={s.id}
+      x={safeX}
+      y={safeY}
+      width={safeW}
+      height={safeH}
+      image={image || undefined}
+      draggable={draggable}
+      onClick={onClick}
+      onTap={onClick}
+      onDragEnd={onDragEnd}
+      dragBoundFunc={function(pos) {
+        if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+        return pos;
+      }}
+      name="selectable-shape"
+    />
+  );
+};
 
 export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasProps) {
   const [gridPattern, setGridPattern] = useState<HTMLCanvasElement | null>(
@@ -45,11 +261,14 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const stageRef = useRef<any>();
   const transformerRef = useRef<any>();
   const isInitialLoad = useRef(true);
+  const internalClipboard = useRef<any[]>([]);
 
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [action, setAction] = useState(ACTIONS.SELECT);
-  const [fillColor, setFillColor] = useState("#3b82f6"); // Default blue for shapes
-  const [penColor, setPenColor] = useState("#000000"); // independent pen color for scribble tool
+  const [fillColor, setFillColor] = useState("transparent"); // Default no fill
+  const [penColor, setPenColor] = useState("#000000");
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [sloppiness, setSloppiness] = useState(0);
   const [rectangles, setRectangles] = useState<any[]>([]);
   const [circles, setCircles] = useState<any[]>([]);
   const [arrows, setArrows] = useState<any[]>([]);
@@ -67,12 +286,20 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const [speechBubbles, setSpeechBubbles] = useState<any[]>([]);
   const [stars, setStars] = useState<any[]>([]);
   const [parallelograms, setParallelograms] = useState<any[]>([]);
+  const [images, setImages] = useState<any[]>([]);
 
   const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
+  const [fillMenuOpen, setFillMenuOpen] = useState(false);
+  const [penMenuOpen, setPenMenuOpen] = useState(false);
 
-  // Track which shape is selected (for delete / move)
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  // Track which shapes are selected (for delete / move)
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   const [selectedShapeType, setSelectedShapeType] = useState<string | null>(null);
+
+  // Marquee Selection State
+  const [isSelectingRectangle, setIsSelectingRectangle] = useState(false);
+  const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
+  const [selectionEnd, setSelectionEnd] = useState({ x: 0, y: 0 });
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -81,6 +308,9 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [analysisData, setAnalysisData] = useState<DiagramData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const [isMermaidModalOpen, setIsMermaidModalOpen] = useState(false);
+  const [mermaidCode, setMermaidCode] = useState("graph TD\nA[Start] --> B{Is it working?}\nB -- Yes --> C[Great!]\nB -- No --> D[Debug]");
 
   const strokeColorDefault = "#000";
   const getCssVar = (name: string, fallback = "") => {
@@ -95,10 +325,184 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     }
   };
 
-  const strokeColor = getCssVar("--border", strokeColorDefault);
+  const strokeColor = getCssVar("--text", strokeColorDefault);
+
+  // Track default properties for NEW shapes
+  const [activeProps, setActiveProps] = useState({
+    stroke: strokeColor,
+    fill: "transparent",
+    strokeWidth: 2,
+    sloppiness: 0,
+  });
+
+  // Sync activeProps with theme when it changes
+  useEffect(() => {
+    setActiveProps(prev => ({ ...prev, stroke: strokeColor }));
+  }, [strokeColor]);
   const isPaining = useRef(false);
   const currentShapeId = useRef<string | null>(null);
   const isDraggable = action === ACTIONS.SELECT;
+
+  // ─── Helper: Get selected shape object ──────────────────────────────────
+  const getSelectedShape = () => {
+    if (selectedShapeIds.length === 0) return null;
+    const all = [
+      ...rectangles, ...circles, ...arrows, ...triangles, ...diamonds,
+      ...pentagons, ...hexagons, ...ellipses, ...stars, ...parallelograms,
+      ...connectors, ...speechBubbles, ...beziers, ...scribbles, ...images
+    ];
+    // Return the first selected shape for property editing
+    return all.find(s => s.id === selectedShapeIds[0]);
+  };
+
+  const updateSelectedShape = (newProps: any) => {
+    if (selectedShapeIds.length === 0) return;
+    const update = (list: any[]) => list.map(s => selectedShapeIds.includes(s.id) ? { ...s, ...newProps } : s);
+    setRectangles(update);
+    setCircles(update);
+    setArrows(update);
+    setTriangles(update);
+    setDiamonds(update);
+    setPentagons(update);
+    setHexagons(update);
+    setEllipses(update);
+    setStars(update);
+    setParallelograms(update);
+    setConnectors(update);
+    setSpeechBubbles(update);
+    setBeziers(update);
+    setScribbles(update);
+    setImages(update);
+  };
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+  const [stageScale, setStageScale] = useState(1);
+
+  // ─── Canvas Mode: A4 Pages vs Infinite ──────────────────────────────────
+  const A4_WIDTH = 794;   // A4 at 96dpi (210mm)
+  const A4_HEIGHT = 1123; // A4 at 96dpi (297mm)
+  const PAGE_GAP = 28;    // pixels between pages
+  const PAGE_PADDING = 40; // outer padding around pages
+
+  type CanvasMode = 'a4' | 'infinite';
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>('a4');
+  const [numPages, setNumPages] = useState(1);
+
+  // Derived A4 stage dimensions
+  const a4StageWidth = A4_WIDTH + PAGE_PADDING * 2;
+  const a4StageHeight = numPages * A4_HEIGHT + (numPages - 1) * PAGE_GAP + PAGE_PADDING * 2;
+
+  // Horizontal offset to center the A4 page in the viewport
+  // Stability Fix: Use a fixed stage coordinate system and center the view instead of shifting the group
+  const pageOffsetX = 0;
+
+  const centerView = () => {
+    const stage = stageRef.current;
+    if (!stage || !size.width || canvasMode !== 'a4') return;
+
+    // Calculate scale to fit page width plus some padding
+    const padding = 80;
+    const availableWidth = size.width - padding;
+    const initialScale = Math.min(1.2, availableWidth / A4_WIDTH);
+
+    // Position stage so A4 page (at x=0) is centered
+    const viewportCenterX = size.width / 2;
+    const initialX = viewportCenterX - (A4_WIDTH * initialScale) / 2;
+
+    setStageScale(initialScale);
+    setStagePos({ x: initialX, y: 20 });
+  };
+
+  // Center view on startup or mode switch
+  useEffect(() => {
+    if (size.width > 0 && canvasMode === 'a4' && isInitialLoad.current) {
+      centerView();
+    }
+  }, [size.width, canvasMode]);
+
+  const handleWheel = (e: any) => {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const oldScale = stage.scaleX();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    const scaleBy = 1.08;
+    const newScale = e.evt.deltaY < 0
+      ? Math.min(oldScale * scaleBy, 8)
+      : Math.max(oldScale / scaleBy, 0.1);
+    if (isNaN(newScale)) return;
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
+    const newPos = {
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    };
+    setStageScale(newScale);
+    setStagePos(newPos);
+  };
+
+  // ─── History (undo / redo) ───────────────────────────────────────────────
+  type CanvasState = {
+    rectangles: any[]; circles: any[]; arrows: any[]; scribbles: any[];
+    textboxes: any[]; triangles: any[]; diamonds: any[]; pentagons: any[];
+    hexagons: any[]; ellipses: any[]; beziers: any[]; connectors: any[];
+    speechBubbles: any[]; stars: any[]; parallelograms: any[];
+    images: any[];
+  };
+
+  const historyStack = useRef<CanvasState[]>([]);
+  const historyIndex = useRef<number>(-1);
+
+  const getSnapshot = (): CanvasState => ({
+    rectangles: [...rectangles], circles: [...circles], arrows: [...arrows],
+    scribbles: [...scribbles], textboxes: [...textboxes], triangles: [...triangles],
+    diamonds: [...diamonds], pentagons: [...pentagons], hexagons: [...hexagons],
+    ellipses: [...ellipses], beziers: [...beziers], connectors: [...connectors],
+    speechBubbles: [...speechBubbles], stars: [...stars], parallelograms: [...parallelograms],
+    images: [...images],
+  });
+
+  const restoreSnapshot = (s: CanvasState) => {
+    setRectangles(s.rectangles); setCircles(s.circles); setArrows(s.arrows);
+    setScribbles(s.scribbles); setTextboxes(s.textboxes); setTriangles(s.triangles);
+    setDiamonds(s.diamonds); setPentagons(s.pentagons); setHexagons(s.hexagons);
+    setEllipses(s.ellipses); setBeziers(s.beziers); setConnectors(s.connectors);
+    setSpeechBubbles(s.speechBubbles); setStars(s.stars); setParallelograms(s.parallelograms);
+    setImages(s.images);
+  };
+
+  const pushHistory = (snapshot: CanvasState) => {
+    // Drop any future states when a new action is taken
+    const newStack = historyStack.current.slice(0, historyIndex.current + 1);
+    newStack.push(snapshot);
+    // Cap history at 50 steps to avoid unbounded memory usage
+    if (newStack.length > 50) newStack.shift();
+    historyStack.current = newStack;
+    historyIndex.current = newStack.length - 1;
+  };
+
+  const handleUndo = () => {
+    if (historyIndex.current <= 0) return;
+    historyIndex.current -= 1;
+    restoreSnapshot(historyStack.current[historyIndex.current]);
+    transformerRef.current?.nodes([]);
+    setSelectedShapeIds([]);
+    setSelectedShapeType(null);
+  };
+
+  const handleRedo = () => {
+    if (historyIndex.current >= historyStack.current.length - 1) return;
+    historyIndex.current += 1;
+    restoreSnapshot(historyStack.current[historyIndex.current]);
+    transformerRef.current?.nodes([]);
+    setSelectedShapeIds([]);
+    setSelectedShapeType(null);
+  };
+
+  const canUndo = historyStack.current.length > 0 && historyIndex.current > 0;
+  const canRedo = historyIndex.current < historyStack.current.length - 1;
 
   // Helper: delete a shape by id across all shape collections
   const deleteShapeById = (id: string) => {
@@ -117,6 +521,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setSpeechBubbles((p) => p.filter((s) => s.id !== id));
     setStars((p) => p.filter((s) => s.id !== id));
     setParallelograms((p) => p.filter((s) => s.id !== id));
+    setImages((p) => p.filter((s) => s.id !== id));
   };
 
   // Handle Dynamic Sizing
@@ -168,6 +573,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setSpeechBubbles([]);
     setStars([]);
     setParallelograms([]);
+    setImages([]);
 
     const loadSessionStrokes = async () => {
       try {
@@ -194,6 +600,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           setSpeechBubbles(sd.speechBubbles || []);
           setStars(sd.stars || []);
           setParallelograms(sd.parallelograms || []);
+          setImages(sd.images || []);
         }
       } catch (err) {
         console.error("Failed to load session strokes:", err);
@@ -218,7 +625,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         await axios.post(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
           strokeData: {
             rectangles, circles, arrows, scribbles, textboxes,
-            triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms
+            triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images
           }
         }, {
           headers: { Authorization: `Bearer ${token}` }
@@ -229,7 +636,38 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, activeSessionId]);
+  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images, activeSessionId]);
+
+  // ─── Auto-expand pages in A4 mode ────────────────────────────────────────
+  useEffect(() => {
+    if (canvasMode !== 'a4') return;
+    // Find the bottommost Y among all shapes
+    const bottoms = [
+      ...rectangles.map(r => (r.y || 0) + Math.abs(r.height || 0)),
+      ...circles.map(c => (c.y || 0) + (c.radius || 0)),
+      ...arrows.map(a => Math.max(a.points?.[1] || 0, a.points?.[3] || 0)),
+      ...scribbles.flatMap(s => {
+        const ys = s.points?.filter((_: any, i: number) => i % 2 === 1) || [];
+        return [Math.max(0, ...ys)];
+      }),
+      ...textboxes.map(t => (t.y || 0) + 30),
+      ...triangles.map(t => (t.y || 0) + (t.radius || 0)),
+      ...diamonds.map(d => (d.y || 0) + (d.radius || 0)),
+      ...pentagons.map(p => (p.y || 0) + (p.radius || 0)),
+      ...hexagons.map(h => (h.y || 0) + (h.radius || 0)),
+      ...ellipses.map(e => (e.y || 0) + (e.radiusY || 0)),
+      ...stars.map(s => (s.y || 0) + (s.outerRadius || 0)),
+      ...parallelograms.map(p => (p.y || 0) + Math.abs(p.height || 0)),
+      ...connectors.map(c => Math.max(c.points?.[1] || 0, c.points?.[3] || 0)),
+      ...speechBubbles.map(b => (b.y || 0) + Math.abs(b.height || 0)),
+      ...beziers.map(b => (b.y || 0) + Math.abs(b.points?.[3] || 0)),
+    ];
+    const maxY = Math.max(0, ...bottoms);
+    // Account for page padding offset
+    const contentY = maxY - PAGE_PADDING;
+    const needed = Math.max(1, Math.ceil((contentY + 150) / (A4_HEIGHT + PAGE_GAP)));
+    if (needed > numPages) setNumPages(needed);
+  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, canvasMode, numPages]);
 
   // create grid pattern so it uses CSS variable for dot color
   useEffect(() => {
@@ -263,10 +701,129 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     });
 
     observer.observe(document.documentElement, { attributes: true });
-    return () => observer.disconnect();
-  }, []);
+
+    // Handle Paste
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          if (!blob) continue;
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const src = event.target?.result as string;
+            const img = new window.Image();
+            img.src = src;
+            img.onload = () => {
+              const id = uuidv4();
+              pushHistory(getSnapshot());
+
+              // Calculate center of view
+              let pasteX = 100;
+              let pasteY = 100;
+              const stage = stageRef.current;
+              if (stage) {
+                const transform = stage.getAbsoluteTransform().copy().invert();
+                const container = containerRef.current;
+                if (container) {
+                  const center = transform.point({
+                    x: container.offsetWidth / 2,
+                    y: container.offsetHeight / 2
+                  });
+                  pasteX = center.x - (img.width > 500 ? 250 : img.width / 2);
+                  pasteY = center.y - ((img.width > 500 ? 500 : img.width) * (img.height / img.width)) / 2;
+                }
+              }
+
+              setImages((prev) => [
+                ...prev,
+                {
+                  id,
+                  x: pasteX,
+                  y: pasteY,
+                  src,
+                  width: img.width > 500 ? 500 : img.width,
+                  height: (img.width > 500 ? 500 : img.width) * (img.height / img.width),
+                },
+              ]);
+              // Select the newly pasted image
+              setSelectedShapeIds([id]);
+              setSelectedShapeType('Image');
+            };
+          };
+          reader.readAsDataURL(blob);
+          break; // ONLY ONE IMAGE AT A TIME (per user request)
+        }
+      }
+    };
+    window.addEventListener("paste", handlePaste);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("paste", handlePaste);
+    };
+  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images]);
+
+  const handleInsertMermaid = async () => {
+    try {
+      // Initialize mermaid if not already
+      mermaid.initialize({ startOnLoad: false, theme: 'default' });
+      
+      const { svg } = await mermaid.render('mermaid-svg-' + uuidv4().replace(/-/g, ''), mermaidCode);
+      
+      // Convert SVG to DataURL via Canvas
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(svg, "image/svg+xml");
+      const svgElement = svgDoc.documentElement;
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      
+      const img = new window.Image();
+      img.src = url;
+      img.onload = () => {
+        const id = uuidv4();
+        
+        // Target width
+        const targetWidth = 500;
+        const scale = targetWidth / img.width;
+        const targetHeight = img.height * scale;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/png');
+          
+          pushHistory(getSnapshot());
+          setImages(prev => [
+            ...prev,
+            {
+              id,
+              x: 150,
+              y: 150,
+              src: dataUrl,
+              width: targetWidth,
+              height: targetHeight,
+            }
+          ]);
+          URL.revokeObjectURL(url);
+          setIsMermaidModalOpen(false);
+        }
+      };
+    } catch (err) {
+      console.error("Mermaid render failed:", err);
+      alert("Mermaid rendering failed. Please check your syntax.");
+    }
+  };
 
   const handleClearAll = () => {
+    pushHistory(getSnapshot());
     setRectangles([]);
     setCircles([]);
     setArrows([]);
@@ -282,64 +839,87 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setSpeechBubbles([]);
     setStars([]);
     setParallelograms([]);
+    setImages([]);
   };
 
   function onPointerDown() {
     if (editingId) return;
-    if (action === ACTIONS.SELECT) return;
-
     const stage = stageRef.current;
-    const { x, y } = stage.getPointerPosition();
+    if (!stage) return;
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    const { x, y } = transform.point(pos);
+    if (isNaN(x) || isNaN(y)) return;
+
     const id = uuidv4();
+
+    // Snapshot state BEFORE drawing begins (so undo reverts the full stroke)
+    if (action !== ACTIONS.ERASER) {
+      pushHistory(getSnapshot());
+    }
 
     currentShapeId.current = id;
     isPaining.current = true;
 
     switch (action) {
+      case ACTIONS.SELECT: {
+        const hit = stage.getIntersection({ x, y });
+        const hitId = hit ? hit.id() : "";
+        if (!hit || hitId.includes('page-') || hitId === 'background' || hitId === "") {
+          setIsSelectingRectangle(true);
+          setSelectionStart({ x, y });
+          setSelectionEnd({ x, y });
+          setSelectedShapeIds([]);
+          setSelectedShapeType(null);
+          transformerRef.current.nodes([]);
+        }
+        break;
+      }
       case ACTIONS.RECTANGLE:
         setRectangles((prev) => [
           ...prev,
-          { id, x, y, height: 5, width: 5, fillColor },
+          { id, x, y, height: 5, width: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) },
         ]);
         break;
       case ACTIONS.CIRCLE:
-        setCircles((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        setCircles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.ARROW:
         setArrows((prev) => [
           ...prev,
-          { id, points: [x, y, x + 5, y + 5], fillColor },
+          { id, points: [x, y, x + 5, y + 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) },
         ]);
         break;
       case ACTIONS.TRIANGLE:
-        setTriangles((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        setTriangles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.DIAMOND:
-        setDiamonds((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        setDiamonds((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.PENTAGON:
-        setPentagons((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        setPentagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.HEXAGON:
-        setHexagons((prev) => [...prev, { id, x, y, radius: 5, fillColor }]);
+        setHexagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.ELLIPSE:
-        setEllipses((prev) => [...prev, { id, x, y, radiusX: 5, radiusY: 5, fillColor }]);
+        setEllipses((prev) => [...prev, { id, x, y, radiusX: 5, radiusY: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.STAR:
-        setStars((prev) => [...prev, { id, x, y, innerRadius: 2.5, outerRadius: 5, fillColor }]);
+        setStars((prev) => [...prev, { id, x, y, innerRadius: 2.5, outerRadius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.PARALLELOGRAM:
-        setParallelograms((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor }]);
+        setParallelograms((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.CONNECTOR:
-        setConnectors((prev) => [...prev, { id, points: [x, y, x, y], fillColor }]);
+        setConnectors((prev) => [...prev, { id, points: [x, y, x, y], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.SPEECH_BUBBLE:
-        setSpeechBubbles((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor }]);
+        setSpeechBubbles((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.BEZIER:
-        setBeziers((prev) => [...prev, { id, x, y, points: [0, 0, 5, 5], fillColor }]);
+        setBeziers((prev) => [...prev, { id, x, y, points: [0, 0, 5, 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
         break;
       case ACTIONS.TEXT:
         setTextboxes((prev) => [
@@ -360,9 +940,9 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         ]);
         break;
       case ACTIONS.ERASER: {
-        // Click-to-delete: find the topmost shape under cursor and remove it
         const hit = stage.getIntersection({ x, y });
         if (hit && hit.id()) {
+          pushHistory(getSnapshot());
           deleteShapeById(hit.id());
         }
         break;
@@ -371,16 +951,31 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   }
 
   function onPointerMove() {
-    if (action === ACTIONS.SELECT || !isPaining.current) return;
+    if (action === ACTIONS.HAND || !isPaining.current) return;
+    if (action === ACTIONS.SELECT && !isSelectingRectangle) return;
     const stage = stageRef.current;
-    const { x, y } = stage.getPointerPosition();
+    if (!stage) return;
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    const { x, y } = transform.point(pos);
+    if (isNaN(x) || isNaN(y)) return;
 
     switch (action) {
+      case ACTIONS.SELECT:
+        if (isSelectingRectangle) {
+          setSelectionEnd({ x, y });
+        }
+        break;
       case ACTIONS.RECTANGLE:
         setRectangles((prev) =>
           prev.map((r) =>
             r.id === currentShapeId.current
-              ? { ...r, width: x - r.x, height: y - r.y }
+              ? { 
+                  ...r, 
+                  width: isNaN(x - r.x) ? r.width : x - r.x, 
+                  height: isNaN(y - r.y) ? r.height : y - r.y 
+                }
               : r,
           ),
         );
@@ -389,7 +984,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         setCircles((prev) =>
           prev.map((c) =>
             c.id === currentShapeId.current
-              ? { ...c, radius: ((y - c.y) ** 2 + (x - c.x) ** 2) ** 0.5 }
+              ? { ...c, radius: isNaN(((y - c.y) ** 2 + (x - c.x) ** 2) ** 0.5) ? c.radius : ((y - c.y) ** 2 + (x - c.x) ** 2) ** 0.5 }
               : c,
           ),
         );
@@ -398,55 +993,56 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         setArrows((prev) =>
           prev.map((a) =>
             a.id === currentShapeId.current
-              ? { ...a, points: [a.points[0], a.points[1], x, y] }
+              ? { ...a, points: [a.points[0], a.points[1], isNaN(x) ? a.points[2] : x, isNaN(y) ? a.points[3] : y] }
               : a,
           ),
         );
         break;
       case ACTIONS.TRIANGLE:
-        setTriangles((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        setTriangles((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: isNaN(Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5)) ? t.radius : Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
         break;
       case ACTIONS.DIAMOND:
-        setDiamonds((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        setDiamonds((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: isNaN(Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5)) ? t.radius : Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
         break;
       case ACTIONS.PENTAGON:
-        setPentagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        setPentagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: isNaN(Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5)) ? t.radius : Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
         break;
       case ACTIONS.HEXAGON:
-        setHexagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
+        setHexagons((prev) => prev.map((t) => t.id === currentShapeId.current ? { ...t, radius: isNaN(Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5)) ? t.radius : Math.max(5, ((y - t.y) ** 2 + (x - t.x) ** 2) ** 0.5) } : t));
         break;
       case ACTIONS.ELLIPSE:
-        setEllipses((prev) => prev.map((e) => e.id === currentShapeId.current ? { ...e, radiusX: Math.abs(x - e.x), radiusY: Math.abs(y - e.y) } : e));
+        setEllipses((prev) => prev.map((e) => e.id === currentShapeId.current ? { ...e, radiusX: isNaN(Math.abs(x - e.x)) ? e.radiusX : Math.abs(x - e.x), radiusY: isNaN(Math.abs(y - e.y)) ? e.radiusY : Math.abs(y - e.y) } : e));
         break;
       case ACTIONS.STAR:
-        setStars((prev) => prev.map((s) => s.id === currentShapeId.current ? { ...s, outerRadius: Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5), innerRadius: Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2) } : s));
+        setStars((prev) => prev.map((s) => s.id === currentShapeId.current ? { ...s, outerRadius: isNaN(Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5)) ? s.outerRadius : Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5), innerRadius: isNaN(Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2)) ? s.innerRadius : Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2) } : s));
         break;
       case ACTIONS.PARALLELOGRAM:
-        setParallelograms((prev) => prev.map((p) => p.id === currentShapeId.current ? { ...p, width: x - p.x, height: y - p.y } : p));
+        setParallelograms((prev) => prev.map((p) => p.id === currentShapeId.current ? { ...p, width: isNaN(x - p.x) ? p.width : x - p.x, height: isNaN(y - p.y) ? p.height : y - p.y } : p));
         break;
       case ACTIONS.CONNECTOR:
-        setConnectors((prev) => prev.map((c) => c.id === currentShapeId.current ? { ...c, points: [c.points[0], c.points[1], x, y] } : c));
+        setConnectors((prev) => prev.map((c) => c.id === currentShapeId.current ? { ...c, points: [c.points[0], c.points[1], isNaN(x) ? c.points[2] : x, isNaN(y) ? c.points[3] : y] } : c));
         break;
       case ACTIONS.SPEECH_BUBBLE:
-        setSpeechBubbles((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, width: x - b.x, height: y - b.y } : b));
+        setSpeechBubbles((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, width: isNaN(x - b.x) ? b.width : x - b.x, height: isNaN(y - b.y) ? b.height : y - b.y } : b));
         break;
       case ACTIONS.BEZIER:
-        setBeziers((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, points: [0, 0, x - b.x, y - b.y] } : b));
+        setBeziers((prev) => prev.map((b) => b.id === currentShapeId.current ? { ...b, points: [0, 0, isNaN(x - b.x) ? b.points[2] : x - b.x, isNaN(y - b.y) ? b.points[3] : y - b.y] } : b));
         break;
       case ACTIONS.SCRIBBLE:
         setScribbles((prev) =>
           prev.map((s) =>
             s.id === currentShapeId.current
-              ? { ...s, points: [...s.points, x, y] }
+              ? { ...s, points: isNaN(x) || isNaN(y) ? s.points : [...s.points, x, y] }
               : s,
           ),
         );
         break;
       case ACTIONS.ERASER: {
-        // Freehand eraser: delete any shape under the current pointer position
         const hit = stage.getIntersection({ x, y });
         if (hit && hit.id()) {
-          deleteShapeById(hit.id());
+          const hitId = hit.id();
+          pushHistory(getSnapshot());
+          deleteShapeById(hitId);
         }
         break;
       }
@@ -456,48 +1052,218 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   function onClick(e: any) {
     if (action !== ACTIONS.SELECT) return;
     const node = e.currentTarget;
-    transformerRef.current.nodes([node]);
-    setSelectedShapeId(node.id());
-    setSelectedShapeType(node.getClassName());
+    if (e.evt && e.evt.shiftKey) {
+      // Multi-select toggle
+      setSelectedShapeIds(prev => prev.includes(node.id()) ? prev.filter(id => id !== node.id()) : [...prev, node.id()]);
+    } else {
+      // Single select
+      setSelectedShapeIds([node.id()]);
+      setSelectedShapeType(node.getClassName());
+    }
   }
 
-  // Delete the currently selected shape
+  function onPointerUp() {
+    isPaining.current = false;
+    if (isSelectingRectangle) {
+      const stage = stageRef.current;
+      const x1 = Math.min(selectionStart.x, selectionEnd.x);
+      const y1 = Math.min(selectionStart.y, selectionEnd.y);
+      const x2 = Math.max(selectionStart.x, selectionEnd.x);
+      const y2 = Math.max(selectionStart.y, selectionEnd.y);
+      const width = x2 - x1;
+      const height = y2 - y1;
+
+      if (width > 2 && height > 2) {
+        // Collect all shapes from all state arrays to search through them directly (100% reliable)
+        const allShapes = [
+          ...rectangles.map(s => ({ ...s, type: 'rectangle' })),
+          ...circles.map(s => ({ ...s, type: 'circle' })),
+          ...arrows.map(s => ({ ...s, type: 'arrow' })),
+          ...scribbles.map(s => ({ ...s, type: 'scribble' })),
+          ...textboxes.map(s => ({ ...s, type: 'text' })),
+          ...triangles.map(s => ({ ...s, type: 'triangle' })),
+          ...diamonds.map(s => ({ ...s, type: 'diamond' })),
+          ...pentagons.map(s => ({ ...s, type: 'pentagon' })),
+          ...hexagons.map(s => ({ ...s, type: 'hexagon' })),
+          ...ellipses.map(s => ({ ...s, type: 'ellipse' })),
+          ...stars.map(s => ({ ...s, type: 'star' })),
+          ...parallelograms.map(s => ({ ...s, type: 'parallelogram' })),
+          ...connectors.map(s => ({ ...s, type: 'connector' })),
+          ...speechBubbles.map(s => ({ ...s, type: 'speech_bubble' })),
+          ...beziers.map(s => ({ ...s, type: 'bezier' })),
+        ];
+
+        const x1 = Math.min(selectionStart.x, selectionEnd.x);
+        const y1 = Math.min(selectionStart.y, selectionEnd.y);
+        const x2 = Math.max(selectionStart.x, selectionEnd.x);
+        const y2 = Math.max(selectionStart.y, selectionEnd.y);
+
+        const selectedIds = allShapes.filter(s => {
+          let sx1 = s.x || 0;
+          let sy1 = s.y || 0;
+          let sx2 = s.x || 0;
+          let sy2 = s.y || 0;
+
+          if (['rectangle', 'parallelogram', 'speech_bubble', 'text'].includes(s.type)) {
+            sx2 = (s.x || 0) + (s.width || 0);
+            sy2 = (s.y || 0) + (s.height || 0);
+          } else if (s.type === 'circle') {
+            const r = s.radius || 0;
+            sx1 = s.x - r; sx2 = s.x + r; sy1 = s.y - r; sy2 = s.y + r;
+          } else if (s.type === 'ellipse') {
+            const rx = s.radiusX || 0;
+            const ry = s.radiusY || rx;
+            sx1 = s.x - rx; sx2 = s.x + rx; sy1 = s.y - ry; sy2 = s.y + ry;
+          } else if (['triangle', 'diamond', 'pentagon', 'hexagon', 'star'].includes(s.type)) {
+            const r = s.radius || s.outerRadius || 0;
+            sx1 = s.x - r; sx2 = s.x + r; sy1 = s.y - r; sy2 = s.y + r;
+          } else if (s.points) {
+            sx1 = Infinity; sy1 = Infinity; sx2 = -Infinity; sy2 = -Infinity;
+            for (let i = 0; i < s.points.length; i += 2) {
+              const px = s.points[i] + (s.x || 0);
+              const py = s.points[i + 1] + (s.y || 0);
+              sx1 = Math.min(sx1, px); sx2 = Math.max(sx2, px);
+              sy1 = Math.min(sy1, py); sy2 = Math.max(sy2, py);
+            }
+          }
+
+          // Use a generous 5px buffer for high sensitivity
+          const m = 5;
+          return !(sx1 > x2 + m || sx2 < x1 - m || sy1 > y2 + m || sy2 < y1 - m);
+        }).map(s => s.id);
+
+        setSelectedShapeIds(selectedIds);
+      }
+      setIsSelectingRectangle(false);
+    }
+  }
+
+  // Delete the currently selected shapes
   const handleDeleteSelected = () => {
-    if (!selectedShapeId) return;
-    setRectangles((p) => p.filter((s) => s.id !== selectedShapeId));
-    setCircles((p) => p.filter((s) => s.id !== selectedShapeId));
-    setArrows((p) => p.filter((s) => s.id !== selectedShapeId));
-    setScribbles((p) => p.filter((s) => s.id !== selectedShapeId));
-    setTextboxes((p) => p.filter((s) => s.id !== selectedShapeId));
-    setTriangles((p) => p.filter((s) => s.id !== selectedShapeId));
-    setDiamonds((p) => p.filter((s) => s.id !== selectedShapeId));
-    setPentagons((p) => p.filter((s) => s.id !== selectedShapeId));
-    setHexagons((p) => p.filter((s) => s.id !== selectedShapeId));
-    setEllipses((p) => p.filter((s) => s.id !== selectedShapeId));
-    setBeziers((p) => p.filter((s) => s.id !== selectedShapeId));
-    setConnectors((p) => p.filter((s) => s.id !== selectedShapeId));
-    setSpeechBubbles((p) => p.filter((s) => s.id !== selectedShapeId));
-    setStars((p) => p.filter((s) => s.id !== selectedShapeId));
-    setParallelograms((p) => p.filter((s) => s.id !== selectedShapeId));
+    if (selectedShapeIds.length === 0) return;
+    pushHistory(getSnapshot());
+    selectedShapeIds.forEach(id => deleteShapeById(id));
     transformerRef.current?.nodes([]);
-    setSelectedShapeId(null);
+    setSelectedShapeIds([]);
     setSelectedShapeType(null);
   };
 
-  // Keyboard delete
+  const handleCopySelected = () => {
+    if (selectedShapeIds.length === 0) return;
+    const all = [
+      ...rectangles.map(s => ({ ...s, type: 'rectangle' })),
+      ...circles.map(s => ({ ...s, type: 'circle' })),
+      ...arrows.map(s => ({ ...s, type: 'arrow' })),
+      ...scribbles.map(s => ({ ...s, type: 'scribble' })),
+      ...textboxes.map(s => ({ ...s, type: 'text' })),
+      ...triangles.map(s => ({ ...s, type: 'triangle' })),
+      ...diamonds.map(s => ({ ...s, type: 'diamond' })),
+      ...pentagons.map(s => ({ ...s, type: 'pentagon' })),
+      ...hexagons.map(s => ({ ...s, type: 'hexagon' })),
+      ...ellipses.map(s => ({ ...s, type: 'ellipse' })),
+      ...stars.map(s => ({ ...s, type: 'star' })),
+      ...parallelograms.map(s => ({ ...s, type: 'parallelogram' })),
+      ...connectors.map(s => ({ ...s, type: 'connector' })),
+      ...speechBubbles.map(s => ({ ...s, type: 'speech_bubble' })),
+      ...beziers.map(s => ({ ...s, type: 'bezier' })),
+      ...images.map(s => ({ ...s, type: 'image' }))
+    ];
+    // Find only the FIRST selected shape as per user request
+    const firstSelectedId = selectedShapeIds[0];
+    const selected = all.find(s => s.id === firstSelectedId);
+    if (selected) {
+      internalClipboard.current = [JSON.parse(JSON.stringify(selected))];
+    }
+  };
+
+  const handleInternalPaste = () => {
+    if (internalClipboard.current.length === 0) return;
+    pushHistory(getSnapshot());
+
+    const newShapes = internalClipboard.current.map(s => ({
+      ...s,
+      id: uuidv4(),
+      x: (s.x || 0) + 20,
+      y: (s.y || 0) + 20,
+    }));
+
+    // Update individual state arrays
+    newShapes.forEach(s => {
+      switch (s.type) {
+        case 'rectangle': setRectangles(prev => [...prev, s]); break;
+        case 'circle': setCircles(prev => [...prev, s]); break;
+        case 'arrow': setArrows(prev => [...prev, s]); break;
+        case 'scribble': setScribbles(prev => [...prev, s]); break;
+        case 'text': setTextboxes(prev => [...prev, s]); break;
+        case 'triangle': setTriangles(prev => [...prev, s]); break;
+        case 'diamond': setDiamonds(prev => [...prev, s]); break;
+        case 'pentagon': setPentagons(prev => [...prev, s]); break;
+        case 'hexagon': setHexagons(prev => [...prev, s]); break;
+        case 'ellipse': setEllipses(prev => [...prev, s]); break;
+        case 'star': setStars(prev => [...prev, s]); break;
+        case 'parallelogram': setParallelograms(prev => [...prev, s]); break;
+        case 'connector': setConnectors(prev => [...prev, s]); break;
+        case 'speech_bubble': setSpeechBubbles(prev => [...prev, s]); break;
+        case 'bezier': setBeziers(prev => [...prev, s]); break;
+        case 'image': setImages(prev => [...prev, s]); break;
+      }
+    });
+
+    // Select the newly pasted shapes
+    const newIds = newShapes.map(s => s.id);
+    setSelectedShapeIds(newIds);
+
+    // Increment offset for next paste
+    internalClipboard.current = newShapes;
+  };
+
+  // Keyboard shortcuts: Delete/Backspace to delete, Ctrl+Z/Y for undo/redo
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeId) {
-        // Don't fire if user is typing in textarea or input
-        const tag = (e.target as HTMLElement).tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      // Undo: Ctrl+Z
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      if (e.ctrlKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      // Tool shortcuts (no modifier key)
+      if (!e.ctrlKey && !e.metaKey) {
+        if (e.key === 'v' || e.key === 'V') { setAction(ACTIONS.SELECT); return; }
+        if (e.key === 'h' || e.key === 'H') { setAction(ACTIONS.HAND); return; }
+      }
+      // Delete / Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeIds.length > 0) {
         handleDeleteSelected();
+      }
+
+      // Copy: Ctrl+C
+      if (e.ctrlKey && e.key === 'c' && selectedShapeIds.length > 0) {
+        e.preventDefault();
+        handleCopySelected();
+      }
+      // Paste: Ctrl+V (internal)
+      if (e.ctrlKey && e.key === 'v' && internalClipboard.current.length > 0) {
+        // Only trigger internal paste if we have copied shapes.
+        // System clipboard image paste is handled by window.onpaste event separately.
+        // BUT if there is an image in clipboard, browser fires 'paste'.
+        // If we also handle Ctrl+V here, we might double-paste if we are not careful.
+        // However, browser 'paste' event doesn't contain our internal shapes.
+        handleInternalPaste();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedShapeId]);
+  }, [selectedShapeIds, historyIndex.current]);
 
   // Helper: sync dragged x/y back into state
   const makeDragEnd = (
@@ -505,7 +1271,11 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   ) => (id: string) => (e: any) => {
     const node = e.target;
     setter((prev) =>
-      prev.map((s) => s.id === id ? { ...s, x: node.x(), y: node.y() } : s)
+      prev.map((s) => s.id === id ? { 
+        ...s, 
+        x: isNaN(node.x()) ? s.x : node.x(), 
+        y: isNaN(node.y()) ? s.y : node.y() 
+      } : s)
     );
   };
 
@@ -525,6 +1295,131 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const syncScribble = makeDragEnd(setScribbles);
   const syncTextbox = makeDragEnd(setTextboxes);
 
+  const onTransformEnd = (e: any) => {
+    const target = e.target;
+    if (!target) return;
+    
+    // In Konva, if multiple nodes are selected, e.target is the Transformer
+    const nodes = target.nodes ? target.nodes() : [target];
+    if (!nodes || nodes.length === 0) return;
+
+    // Map all transformations to avoid redundant calculations
+    const transformMap = new Map();
+    nodes.forEach((node: any) => {
+      const id = node.id();
+      if (id && id !== "selection-rectangle" && id !== "background") {
+        transformMap.set(id, {
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          scaleX: node.scaleX(),
+          scaleY: node.scaleY(),
+          nodeWidth: node.width(),
+          nodeHeight: node.height()
+        });
+        // Reset node scale so it doesn't accumulate
+        node.scaleX(1);
+        node.scaleY(1);
+      }
+    });
+
+    if (transformMap.size === 0) return;
+    pushHistory(getSnapshot());
+
+    const updateAll = (prev: any[]) => prev.map((s) => {
+      const transform = transformMap.get(s.id);
+      if (!transform) return s;
+      
+      const { x, y, rotation, scaleX, scaleY, nodeWidth, nodeHeight } = transform;
+      const updated = {
+        ...s,
+        x: isNaN(x) ? s.x : x,
+        y: isNaN(y) ? s.y : y,
+        rotation: isNaN(rotation) ? s.rotation : rotation,
+      };
+
+      // Scale dimensional properties safely
+      const safeScaleX = isNaN(scaleX) ? 1 : scaleX;
+      const safeScaleY = isNaN(scaleY) ? 1 : scaleY;
+
+      if (s.width !== undefined) {
+        const val = (s.width || nodeWidth) * safeScaleX;
+        updated.width = isNaN(val) ? s.width : val;
+      }
+      if (s.height !== undefined) {
+        const val = (s.height || nodeHeight) * safeScaleY;
+        updated.height = isNaN(val) ? s.height : val;
+      }
+      if (s.radius !== undefined) {
+        const val = (s.radius || 5) * safeScaleX;
+        updated.radius = isNaN(val) ? s.radius : val;
+      }
+      if (s.radiusX !== undefined) {
+        const val = (s.radiusX || 5) * safeScaleX;
+        updated.radiusX = isNaN(val) ? s.radiusX : val;
+      }
+      if (s.radiusY !== undefined) {
+        const val = (s.radiusY || 5) * safeScaleY;
+        updated.radiusY = isNaN(val) ? s.radiusY : val;
+      }
+      if (s.innerRadius !== undefined) {
+        const val = (s.innerRadius || 2.5) * safeScaleX;
+        updated.innerRadius = isNaN(val) ? s.innerRadius : val;
+      }
+      if (s.outerRadius !== undefined) {
+        const val = (s.outerRadius || 5) * safeScaleX;
+        updated.outerRadius = isNaN(val) ? s.outerRadius : val;
+      }
+
+      // Transform points for sketches/arrows/paths
+      if (s.points && !s.radius) {
+        updated.points = s.points.map((p: number, i: number) => 
+          i % 2 === 0 ? p * safeScaleX : p * safeScaleY
+        );
+      }
+      
+      return updated;
+    });
+
+    setRectangles(updateAll);
+    setCircles(updateAll);
+    setArrows(updateAll);
+    setTriangles(updateAll);
+    setDiamonds(updateAll);
+    setPentagons(updateAll);
+    setHexagons(updateAll);
+    setEllipses(updateAll);
+    setStars(updateAll);
+    setParallelograms(updateAll);
+    setConnectors(updateAll);
+    setSpeechBubbles(updateAll);
+    setBeziers(updateAll);
+    setImages(updateAll);
+    setScribbles(updateAll);
+    setTextboxes(updateAll);
+  };
+
+  // Keep Transformer synced with selectedShapeIds across re-renders
+  useEffect(() => {
+    if (selectedShapeIds.length > 0 && transformerRef.current) {
+      const stage = stageRef.current;
+      if (stage) {
+        const nodes = selectedShapeIds
+          .map(id => stage.findOne('#' + id))
+          .filter(Boolean) as any[];
+
+        if (nodes.length > 0) {
+          transformerRef.current.nodes(nodes);
+          transformerRef.current.getLayer().batchDraw();
+        } else {
+          transformerRef.current.nodes([]);
+        }
+      }
+    } else {
+      transformerRef.current?.nodes([]);
+    }
+  }, [selectedShapeIds, rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images]);
+
   const handleExport = () => {
     const uri = stageRef.current.toDataURL();
     const link = document.createElement("a");
@@ -536,6 +1431,37 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   };
 
   const handleAnalyzeDiagram = async () => {
+    // 1. Collect ALL elements into a single array with types, normalizing properties
+    const allElementsList = [
+      ...rectangles.map(s => ({ ...s, type: 'rectangle' })),
+      ...circles.map(s => ({ ...s, type: 'circle' })),
+      ...arrows.map(s => ({ ...s, type: 'arrow' })),
+      ...scribbles.map(s => ({ ...s, type: 'scribble', stroke: s.strokeColor || penColor })),
+      ...textboxes.map(s => ({ ...s, type: 'text', stroke: s.fillColor || penColor })),
+      ...triangles.map(s => ({ ...s, type: 'triangle' })),
+      ...diamonds.map(s => ({ ...s, type: 'diamond' })),
+      ...pentagons.map(s => ({ ...s, type: 'pentagon' })),
+      ...hexagons.map(s => ({ ...s, type: 'hexagon' })),
+      ...ellipses.map(s => ({ ...s, type: 'ellipse' })),
+      ...stars.map(s => ({ ...s, type: 'star' })),
+      ...parallelograms.map(s => ({ ...s, type: 'parallelogram' })),
+      ...connectors.map(s => ({ ...s, type: 'connector', stroke: s.stroke || strokeColor })),
+      ...speechBubbles.map(s => ({ ...s, type: 'speech_bubble', stroke: s.stroke || strokeColor })),
+      ...beziers.map(s => ({ ...s, type: 'bezier', stroke: s.stroke || strokeColor })),
+      ...images.map(s => ({ ...s, type: 'image' })),
+    ];
+
+    // 2. Determine which elements to analyze
+    let elementsToAnalyze = allElementsList;
+    if (selectedShapeIds.length > 0) {
+      elementsToAnalyze = allElementsList.filter(el => selectedShapeIds.includes(el.id));
+    }
+
+    if (elementsToAnalyze.length === 0) {
+      alert("Please draw something or select shapes to analyze.");
+      return;
+    }
+
     setIsAnalyzing(true);
     setIsModalOpen(true);
     setAnalysisData(null);
@@ -553,8 +1479,13 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         localStorage.setItem('current_session_id', currentSessionId!);
       }
 
-      // Get image from canvas
-      const dataUrl = stageRef.current.toDataURL();
+      // --- SELECTION BASED CROPPING ---
+      // Compute bounding box
+      const box = getBoundingBox(elementsToAnalyze);
+
+      // Render these specific elements to an offscreen canvas
+      const dataUrl = await renderToOffscreenCanvas(elementsToAnalyze, box);
+
       const blob = await (await fetch(dataUrl)).blob();
       const file = new File([blob], "diagram.png", { type: "image/png" });
 
@@ -563,9 +1494,25 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
       // Send session and stroke data
       formData.append("sessionId", currentSessionId!);
+
+      // We still send ALL strokes if nothing is selected, or only selected ones?
+      // Usually, it's better to send only the selected ones for context.
       formData.append("strokeData", JSON.stringify({
-        rectangles, circles, arrows, scribbles, textboxes,
-        triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms
+        rectangles: elementsToAnalyze.filter(e => e.type === 'rectangle'),
+        circles: elementsToAnalyze.filter(e => e.type === 'circle'),
+        arrows: elementsToAnalyze.filter(e => e.type === 'arrow'),
+        scribbles: elementsToAnalyze.filter(e => e.type === 'scribble'),
+        textboxes: elementsToAnalyze.filter(e => e.type === 'text'),
+        triangles: elementsToAnalyze.filter(e => e.type === 'triangle'),
+        diamonds: elementsToAnalyze.filter(e => e.type === 'diamond'),
+        pentagons: elementsToAnalyze.filter(e => e.type === 'pentagon'),
+        hexagons: elementsToAnalyze.filter(e => e.type === 'hexagon'),
+        ellipses: elementsToAnalyze.filter(e => e.type === 'ellipse'),
+        beziers: elementsToAnalyze.filter(e => e.type === 'bezier'),
+        connectors: elementsToAnalyze.filter(e => e.type === 'connector'),
+        speechBubbles: elementsToAnalyze.filter(e => e.type === 'speech_bubble'),
+        stars: elementsToAnalyze.filter(e => e.type === 'star'),
+        parallelograms: elementsToAnalyze.filter(e => e.type === 'parallelogram')
       }));
 
       const token = await auth.currentUser?.getIdToken();
@@ -594,6 +1541,60 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     }
   };
 
+  const handleInsertImageFromModal = (src: string) => {
+    if (!src) return;
+    
+    const img = new window.Image();
+    img.src = src;
+    img.onload = () => {
+      const id = uuidv4();
+      pushHistory(getSnapshot());
+
+      const stage = stageRef.current;
+      const container = containerRef.current;
+      
+      let pasteX = 150;
+      let pasteY = 150;
+
+      if (stage && container) {
+        const transform = stage.getAbsoluteTransform().copy().invert();
+        const center = transform.point({
+          x: container.offsetWidth / 2,
+          y: container.offsetHeight / 2
+        });
+        
+        // Use a reasonable size for the inserted diagram
+        const targetWidth = Math.min(600, img.width);
+        const targetHeight = targetWidth * (img.height / img.width);
+        
+        pasteX = center.x - targetWidth / 2;
+        pasteY = center.y - targetHeight / 2;
+
+        setImages((prev) => [
+          ...prev,
+          {
+            id,
+            x: pasteX,
+            y: pasteY,
+            src,
+            width: targetWidth,
+            height: targetHeight,
+          },
+        ]);
+        
+        // Select the newly inserted diagram
+        setSelectedShapeIds([id]);
+        setSelectedShapeType('Image');
+      } else {
+        console.error("Stage or container not found during diagram insertion");
+      }
+    };
+    img.onerror = () => {
+      console.error("Failed to load image for insertion");
+      alert("Failed to insert diagram to canvas.");
+    };
+  };
+
   const isEmpty =
     rectangles.length === 0 &&
     circles.length === 0 &&
@@ -612,10 +1613,32 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     parallelograms.length === 0;
 
   return (
-    <div className="flex-1 p-6 bg-white dark:bg-[#121212] flex flex-col h-full font-['Inter'] transition-colors">
-      {/* TOOLBAR */}
-      <div className="flex justify-center mb-6">
-        <div className="flex items-center gap-1 p-1 bg-white dark:bg-[#1a1a1a] border border-gray-200/70 dark:border-white/8 shadow-[0_1px_6px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_6px_rgba(0,0,0,0.3)] rounded-2xl transition-colors">
+    <div className="relative w-full h-full font-['Inter'] bg-white dark:bg-[#121212] transition-colors overflow-hidden">
+
+      {/* FLOATING TOOLBAR */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl transition-colors">
+          {/* SELECT */}
+          <Tooltip text="Select & move shapes (V)">
+            <button
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SELECT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+              onClick={() => setAction(ACTIONS.SELECT)}
+              aria-label="Select"
+            >
+              <GiArrowCursor size="1.2rem" />
+            </button>
+          </Tooltip>
+          {/* HAND */}
+          <Tooltip text="Hand — pan & zoom (H)">
+            <button
+              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.HAND ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+              onClick={() => setAction(ACTIONS.HAND)}
+              aria-label="Hand"
+            >
+              <LuHand size="1.2rem" />
+            </button>
+          </Tooltip>
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
           <Tooltip text="Draw freehand (Pencil)">
             <button
               className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
@@ -703,33 +1726,96 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
           <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
 
-          {/* COLOR PICKERS */}
-          <Tooltip text="Shape color">
-            <div className="flex items-center px-2">
-              <input
-                type="color"
-                value={fillColor}
-                onChange={(e) => setFillColor(e.target.value)}
-                className="w-8 h-8 cursor-pointer rounded-md border-0 bg-transparent"
-                aria-label="Shape color"
-              />
-              {/* only show pen color picker when drawing tool is active */}
-              {action === ACTIONS.SCRIBBLE && (
-                <Tooltip text="Pen color">
-                  <input
-                    type="color"
-                    value={penColor}
-                    onChange={(e) => setPenColor(e.target.value)}
-                    className="w-8 h-8 ml-2 cursor-pointer rounded-md border-0 bg-transparent"
-                    aria-label="Pen color"
-                  />
-                </Tooltip>
+          {/* MODERN COLOR PICKERS */}
+          <div className="flex items-center gap-1.5 px-1.5">
+            {/* Shape Fill Color */}
+            <div className="relative">
+              <Tooltip text="Shape Fill Color">
+                <button
+                  onClick={() => { setFillMenuOpen(!fillMenuOpen); setPenMenuOpen(false); setShapesMenuOpen(false); }}
+                  className="w-7 h-7 rounded-full border border-gray-200 dark:border-white/10 shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
+                  style={{ background: fillColor === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : fillColor }}
+                >
+                  {fillColor === 'transparent' && <div className="w-full h-px bg-red-400 rotate-45" />}
+                </button>
+              </Tooltip>
+              {fillMenuOpen && (
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Fill Color</h4>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733', '#000000', '#ffffff'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { setFillColor(c); setFillMenuOpen(false); }}
+                        className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                        style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
+                      />
+                    ))}
+                    <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
+                      <input type="color" value={fillColor === 'transparent' ? '#ffffff' : fillColor} onChange={(e) => setFillColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                      <span className="text-[10px] pointer-events-none">+</span>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          </Tooltip>
+
+            {/* Pen / Stroke Color */}
+            <div className="relative">
+              <Tooltip text="Pen / Stroke Color">
+                <button
+                  onClick={() => { setPenMenuOpen(!penMenuOpen); setFillMenuOpen(false); setShapesMenuOpen(false); }}
+                  className="w-7 h-7 rounded-full border-2 border-white dark:border-[#1a1a1a] shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
+                  style={{ background: penColor }}
+                >
+                  <LuPencil size="0.7rem" className={penColor === '#ffffff' || penColor === 'white' ? 'text-black' : 'text-white'} />
+                </button>
+              </Tooltip>
+              {penMenuOpen && (
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Pen Color</h4>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#a855f7', '#6366f1'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { setPenColor(c); setPenMenuOpen(false); }}
+                        className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${penColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                        style={{ background: c }}
+                      />
+                    ))}
+                    <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
+                      <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                      <span className="text-[10px] pointer-events-none">+</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
 
+          <Tooltip text="Undo (Ctrl+Z)">
+            <button
+              className={`p-2 rounded-lg transition-colors ${!canUndo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
+              onClick={handleUndo}
+              disabled={!canUndo}
+              aria-label="Undo"
+            >
+              <LuUndo2 size="1.2rem" />
+            </button>
+          </Tooltip>
+          <Tooltip text="Redo (Ctrl+Y)">
+            <button
+              className={`p-2 rounded-lg transition-colors ${!canRedo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
+              onClick={handleRedo}
+              disabled={!canRedo}
+              aria-label="Redo"
+            >
+              <LuRedo2 size="1.2rem" />
+            </button>
+          </Tooltip>
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
           <Tooltip text="Export as image">
             <button
               className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg transition-colors"
@@ -740,12 +1826,12 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
             </button>
           </Tooltip>
           {/* Delete selected shape button */}
-          {selectedShapeId && (
+          {selectedShapeIds.length > 0 && (
             <Tooltip text="Delete selected shape">
               <button
                 className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 border border-red-100 dark:border-red-500/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
                 onClick={handleDeleteSelected}
-                aria-label="Delete selected shape"
+                aria-label="Delete selected shapes"
               >
                 <MdDeleteOutline size="1.2rem" />
               </button>
@@ -760,9 +1846,19 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
               <IoMdTrash size="1.2rem" />
             </button>
           </Tooltip>
+          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+          <Tooltip text="Insert Mermaid Diagram">
+            <button
+              className="p-2 text-[#5e6ad2] hover:bg-blue-50 dark:hover:bg-blue-900/10 rounded-lg transition-colors"
+              onClick={() => setIsMermaidModalOpen(true)}
+              aria-label="Insert Mermaid Diagram"
+            >
+              <TbRoute size="1.2rem" />
+            </button>
+          </Tooltip>
         </div>
         <button
-          className="px-4 py-2 ml-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 transition-colors shadow-sm flex items-center gap-2"
+          className="px-4 py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 text-sm font-semibold disabled:opacity-40 transition-all shadow-[0_2px_10px_rgba(250,204,21,0.3)] flex items-center gap-2 whitespace-nowrap border border-yellow-500/20"
           onClick={handleAnalyzeDiagram}
           disabled={isEmpty || isAnalyzing}
         >
@@ -775,167 +1871,425 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
             "Analyse Diagram"
           )}
         </button>
+        {/* Canvas mode toggle */}
+        <div className="flex items-center gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl">
+          <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'A4 Page Mode (structured)'}>
+            <button
+              onClick={() => { if (isEmpty) { setCanvasMode('a4'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
+              disabled={!isEmpty && canvasMode !== 'a4'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'a4'
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm border border-yellow-500/20'
+                  : !isEmpty
+                    ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
+                }`}
+              aria-label="A4 Page Mode"
+            >
+              <LuFile size="0.9rem" />
+              Pages
+              {!isEmpty && canvasMode !== 'a4' && <span className="ml-0.5 text-gray-400">🔒</span>}
+            </button>
+          </Tooltip>
+          <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'Infinite Canvas Mode (free drawing)'}>
+            <button
+              onClick={() => { if (isEmpty) { setCanvasMode('infinite'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
+              disabled={!isEmpty && canvasMode !== 'infinite'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'infinite'
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm border border-yellow-500/20'
+                  : !isEmpty
+                    ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
+                }`}
+              aria-label="Infinite Canvas Mode"
+            >
+              <LuInfinity size="0.9rem" />
+              Infinite
+              {!isEmpty && canvasMode !== 'infinite' && <span className="ml-0.5 text-gray-400">🔒</span>}
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
-      {/* CANVAS AREA */}
+      {/* Floating Property Window — Left Side */}
+      {selectedShapeIds.length > 0 && (
+        <div className="absolute left-[280px] top-1/2 -translate-y-1/2 z-50 animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="p-4 bg-white/90 dark:bg-[#1e1e1e]/90 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#333] shadow-2xl flex flex-col gap-4 w-52">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Properties {selectedShapeIds.length > 1 && `(${selectedShapeIds.length})`}</h3>
+
+            {/* Outline Color */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500">Outline Color</label>
+              <div className="flex flex-wrap gap-1.5">
+                {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => updateSelectedShape({ stroke: c })}
+                    className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.stroke === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                    style={{ background: c }}
+                  />
+                ))}
+                <input type="color" className="w-5 h-5 p-0 border-0 bg-transparent cursor-pointer" onChange={(e) => updateSelectedShape({ stroke: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Fill Color */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500">Fill Color</label>
+              <div className="flex flex-wrap gap-1.5">
+                {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => updateSelectedShape({ fillColor: c })}
+                    className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                    style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Stroke Width */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] font-semibold text-gray-500">Stroke Width</label>
+                <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">{getSelectedShape()?.strokeWidth || 2}px</span>
+              </div>
+              <input
+                type="range" min="1" max="10" step="1"
+                value={getSelectedShape()?.strokeWidth || 2}
+                onChange={(e) => updateSelectedShape({ strokeWidth: parseInt(e.target.value) })}
+                className="w-full accent-blue-500 h-1.5 bg-gray-200 dark:bg-[#333] rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+
+            {/* Sloppiness */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] font-semibold text-gray-500">Sloppiness</label>
+                <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">{getSelectedShape()?.sloppiness || 0}</span>
+              </div>
+              <input
+                type="range" min="0" max="4" step="0.5"
+                value={getSelectedShape()?.sloppiness || 0}
+                onChange={(e) => updateSelectedShape({ sloppiness: parseFloat(e.target.value) })}
+                className="w-full accent-yellow-400 h-1.5 bg-gray-200 dark:bg-[#333] rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={handleDeleteSelected}
+              className="mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+            >
+              <MdDeleteOutline size={16} />
+              Delete Shape
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CANVAS — fills full area. A4 mode: tall scrollable stage with centred page cards */}
       <div
-        className="flex-1 relative border-2 border-dashed border-gray-200 dark:border-[#333] rounded-3xl overflow-hidden bg-white dark:bg-[#1e1e1e] transition-colors shadow-inner"
         ref={containerRef}
-        style={{ cursor: action === ACTIONS.ERASER ? 'crosshair' : 'default' }}
+        className={`absolute inset-0 transition-colors`}
+        style={{
+          background: canvasMode === 'a4' ? 'var(--canvas-bg-outer)' : undefined,
+          cursor: action === ACTIONS.HAND && canvasMode === 'infinite' ? 'grab'
+            : action === ACTIONS.ERASER ? 'crosshair'
+              : 'default'
+        }}
       >
+        {/* Single Stage that always fills the full width */}
         <Stage
           ref={stageRef}
           width={size.width}
           height={size.height}
+          x={stagePos.x}
+          y={stagePos.y}
+          scaleX={stageScale}
+          scaleY={stageScale}
+          draggable={action === ACTIONS.HAND}
+          onDragMove={(e) => {
+            if (e.target === e.currentTarget) {
+              const nx = e.target.x();
+              const ny = e.target.y();
+              setStagePos({ 
+                x: isNaN(nx) ? stagePos.x : nx, 
+                y: isNaN(ny) ? stagePos.y : ny 
+              });
+            }
+          }}
+          onDragEnd={(e) => {
+            if (e.target === e.currentTarget) {
+              const nx = e.target.x();
+              const ny = e.target.y();
+              setStagePos({ 
+                x: isNaN(nx) ? stagePos.x : nx, 
+                y: isNaN(ny) ? stagePos.y : ny 
+              });
+            }
+          }}
+          onWheel={handleWheel}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={() => (isPaining.current = false)}
+          onPointerUp={onPointerUp}
         >
           <Layer>
-            <Rect
-              width={size.width}
-              height={size.height}
-              fill={getCssVar("--canvas-bg", "#ffffff")}
-              fillPatternImage={gridPattern as any}
-              fillPatternRepeat="repeat"
-              onClick={() => { transformerRef.current.nodes([]); setSelectedShapeId(null); setSelectedShapeType(null); }}
-            />
-
-            {rectangles.map((rect) => (
+            {/* Background Rect for A4 mode (fills whole stage) */}
+            {canvasMode === 'a4' && (
               <Rect
-                key={rect.id}
-                id={rect.id}
-                {...rect}
-                stroke={selectedShapeId === rect.id ? '#3b82f6' : strokeColor}
-                strokeWidth={selectedShapeId === rect.id ? 2.5 : 2}
-                fill={rect.fillColor}
-                draggable={isDraggable}
-                onClick={onClick}
-                onDragEnd={syncRect(rect.id)}
-              />
-            ))}
-            {circles.map((circle) => (
-              <Circle
-                key={circle.id}
-                id={circle.id}
-                {...circle}
-                stroke={selectedShapeId === circle.id ? '#3b82f6' : strokeColor}
-                strokeWidth={selectedShapeId === circle.id ? 2.5 : 2}
-                fill={circle.fillColor}
-                draggable={isDraggable}
-                onClick={onClick}
-                onDragEnd={syncCircle(circle.id)}
-              />
-            ))}
-            {arrows.map((arrow) => (
-              <Arrow
-                key={arrow.id}
-                id={arrow.id}
-                {...arrow}
-                stroke={selectedShapeId === arrow.id ? '#3b82f6' : strokeColor}
-                strokeWidth={selectedShapeId === arrow.id ? 2.5 : 2}
-                fill={arrow.fillColor}
-                draggable={isDraggable}
-                onClick={onClick}
-                onDragEnd={syncArrow(arrow.id)}
-              />
-            ))}
-            {triangles.map((t) => (
-              <RegularPolygon key={t.id} id={t.id} sides={3} {...t} stroke={selectedShapeId === t.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === t.id ? 2.5 : 2} fill={t.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncTriangle(t.id)} />
-            ))}
-            {diamonds.map((d) => (
-              <RegularPolygon key={d.id} id={d.id} sides={4} {...d} stroke={selectedShapeId === d.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === d.id ? 2.5 : 2} fill={d.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncDiamond(d.id)} />
-            ))}
-            {pentagons.map((p) => (
-              <RegularPolygon key={p.id} id={p.id} sides={5} {...p} stroke={selectedShapeId === p.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === p.id ? 2.5 : 2} fill={p.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncPentagon(p.id)} />
-            ))}
-            {hexagons.map((h) => (
-              <RegularPolygon key={h.id} id={h.id} sides={6} {...h} stroke={selectedShapeId === h.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === h.id ? 2.5 : 2} fill={h.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncHexagon(h.id)} />
-            ))}
-            {ellipses.map((e) => (
-              <Ellipse key={e.id} id={e.id} {...e} stroke={selectedShapeId === e.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === e.id ? 2.5 : 2} fill={e.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncEllipse(e.id)} />
-            ))}
-            {stars.map((s) => (
-              <Star key={s.id} id={s.id} numPoints={5} {...s} stroke={selectedShapeId === s.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === s.id ? 2.5 : 2} fill={s.fillColor} draggable={isDraggable} onClick={onClick} onDragEnd={syncStar(s.id)} />
-            ))}
-            {parallelograms.map((p) => {
-              const skew = Math.abs(p.height) * 0.3;
-              const w = p.width;
-              const h = p.height;
-              return (
-                <Line
-                  key={p.id}
-                  id={p.id}
-                  x={p.x}
-                  y={p.y}
-                  points={[0, h, w, h, w - skew, 0, -skew, 0]}
-                  closed
-                  fill={p.fillColor}
-                  stroke={selectedShapeId === p.id ? '#3b82f6' : strokeColor}
-                  strokeWidth={selectedShapeId === p.id ? 2.5 : 2}
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncParallel(p.id)}
-                />
-              );
-            })}
-            {connectors.map((c) => (
-              <Path key={c.id} id={c.id} data={`M ${c.points[0]} ${c.points[1]} L ${c.points[0]} ${c.points[3]} L ${c.points[2]} ${c.points[3]}`} stroke={selectedShapeId === c.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === c.id ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncConnector(c.id)} />
-            ))}
-            {speechBubbles.map((b) => (
-              <Path key={b.id} id={b.id} x={b.x} y={b.y} data={`M 0 0 L ${b.width} 0 L ${b.width} ${b.height * 0.8} L ${b.width * 0.6} ${b.height * 0.8} L ${b.width * 0.5} ${b.height} L ${b.width * 0.4} ${b.height * 0.8} L 0 ${b.height * 0.8} Z`} fill={b.fillColor} stroke={selectedShapeId === b.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === b.id ? 2.5 : 2} draggable={isDraggable} onClick={onClick} onDragEnd={syncSpeech(b.id)} />
-            ))}
-            {beziers.map((b) => (
-              <Path key={b.id} id={b.id} x={b.x} y={b.y} data={`M 0 0 Q ${b.points[2] / 2 + 50} ${b.points[3] / 2 - 50} ${b.points[2]} ${b.points[3]}`} stroke={selectedShapeId === b.id ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeId === b.id ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncBezier(b.id)} />
-            ))}
-            {scribbles.map((s) => (
-              <Line
-                key={s.id}
-                id={s.id}
-                {...s}
-                stroke={s.strokeColor}
-                strokeWidth={2}
-                lineCap="round"
-                lineJoin="round"
-                globalCompositeOperation="source-over"
-                draggable={isDraggable}
-                onClick={onClick}
-                onDragEnd={syncScribble(s.id)}
-              />
-            ))}
-            {textboxes.map((text) => (
-              <Text
-                key={text.id}
-                id={text.id}
-                {...text}
-                text={editingId === text.id ? "" : text.text}
-                fontFamily="'Inter', sans-serif"
-                fontStyle="500"
-                fontSize={20}
-                padding={5}
-                draggable={isDraggable}
-                onClick={onClick}
-                onDragEnd={syncTextbox(text.id)}
-                onDblClick={(e) => {
-                  const stageBox = stageRef.current
-                    .container()
-                    .getBoundingClientRect();
-                  setEditingId(text.id);
-                  setEditingText(text.text);
-                  setTextareaPos({
-                    x: stageBox.left + e.target.x(),
-                    y: stageBox.top + e.target.y(),
-                    width: e.target.width(),
-                  });
+                x={-50000}
+                y={-50000}
+                width={100000}
+                height={100000}
+                id="background"
+                fill={getCssVar('--canvas-bg-outer', '#e5e7eb')}
+                onClick={() => {
+                  transformerRef.current?.nodes([]);
+                  setSelectedShapeIds([]);
+                  setSelectedShapeType(null);
                 }}
               />
-            ))}
-            <Transformer ref={transformerRef} />
+            )}
+
+            <Group x={pageOffsetX}>
+              {/* Background — different per mode */}
+              {canvasMode === 'a4' ? (
+                <>
+                  {/* White page cards — centered via Group */}
+                  {Array.from({ length: numPages }, (_, i) => (
+                    <Rect
+                      key={`page-${i}`}
+                      id={`page-${i}`}
+                      x={0} // Centered in group
+                      y={PAGE_PADDING + i * (A4_HEIGHT + PAGE_GAP)}
+                      width={A4_WIDTH}
+                      height={A4_HEIGHT}
+                      fill="#ffffff"
+                      fillPatternImage={gridPattern as any}
+                      fillPatternRepeat="repeat"
+                      fillPatternOffset={{ x: 0, y: 0 }}
+                      shadowColor="rgba(0,0,0,0.12)"
+                      shadowBlur={10}
+                      shadowOffsetY={2}
+                      onClick={() => {
+                        transformerRef.current?.nodes([]);
+                        setSelectedShapeIds([]);
+                        setSelectedShapeType(null);
+                      }}
+                    />
+                  ))}
+                </>
+              ) : (
+                /* Infinite canvas: large tiled grid background */
+                <Rect
+                  x={-50000}
+                  y={-50000}
+                  width={100000}
+                  height={100000}
+                  id="background"
+                  fill={getCssVar('--canvas-bg', '#ffffff')}
+                  fillPatternImage={gridPattern as any}
+                  fillPatternRepeat="repeat"
+                  onClick={() => {
+                    transformerRef.current?.nodes([]);
+                    setSelectedShapeIds([]);
+                    setSelectedShapeType(null);
+                  }}
+                />
+              )}
+
+              {rectangles.map((rect) => (
+                <SloppyShape
+                  key={rect.id}
+                  type="rectangle"
+                  {...rect}
+                  isSelected={selectedShapeIds.includes(rect.id)}
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncRect(rect.id)}
+                />
+              ))}
+              {circles.map((circle) => (
+                <SloppyShape
+                  key={circle.id}
+                  type="circle"
+                  {...circle}
+                  isSelected={selectedShapeIds.includes(circle.id)}
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncCircle(circle.id)}
+                />
+              ))}
+              {arrows.map((arrow) => (
+                <Arrow
+                  key={arrow.id}
+                  id={arrow.id}
+                  {...arrow}
+                  stroke={selectedShapeIds.includes(arrow.id) ? '#3b82f6' : (arrow.stroke || strokeColor)}
+                  strokeWidth={selectedShapeIds.includes(arrow.id) ? (arrow.strokeWidth || 2) + 0.5 : (arrow.strokeWidth || 2)}
+                  fill={arrow.fillColor || 'transparent'}
+                  name="selectable-shape"
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncArrow(arrow.id)}
+                  dragBoundFunc={function(pos) {
+                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                    return pos;
+                  }}
+                />
+              ))}
+              {triangles.map((t) => (
+                <SloppyShape key={t.id} type="triangle" {...t} isSelected={selectedShapeIds.includes(t.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncTriangle(t.id)} />
+              ))}
+              {diamonds.map((d) => (
+                <SloppyShape key={d.id} type="diamond" {...d} isSelected={selectedShapeIds.includes(d.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncDiamond(d.id)} />
+              ))}
+              {pentagons.map((p) => (
+                <SloppyShape key={p.id} type="pentagon" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncPentagon(p.id)} />
+              ))}
+              {hexagons.map((h) => (
+                <SloppyShape key={h.id} type="hexagon" {...h} isSelected={selectedShapeIds.includes(h.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncHexagon(h.id)} />
+              ))}
+              {ellipses.map((e) => (
+                <SloppyShape key={e.id} type="ellipse" {...e} isSelected={selectedShapeIds.includes(e.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncEllipse(e.id)} />
+              ))}
+              {stars.map((s) => (
+                <SloppyShape key={s.id} type="star" {...s} isSelected={selectedShapeIds.includes(s.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncStar(s.id)} />
+              ))}
+              {parallelograms.map((p) => (
+                <SloppyShape key={p.id} type="parallelogram" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncParallel(p.id)} />
+              ))}
+              {connectors.map((c) => (
+                <Path key={c.id} id={c.id} name="selectable-shape" data={`M ${c.points[0]} ${c.points[1]} L ${c.points[0]} ${c.points[3]} L ${c.points[2]} ${c.points[3]}`} stroke={selectedShapeIds.includes(c.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(c.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncConnector(c.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+              ))}
+              {speechBubbles.map((b) => (
+                <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 L ${b.width} 0 L ${b.width} ${b.height * 0.8} L ${b.width * 0.6} ${b.height * 0.8} L ${b.width * 0.5} ${b.height} L ${b.width * 0.4} ${b.height * 0.8} L 0 ${b.height * 0.8} Z`} fill={b.fillColor} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} draggable={isDraggable} onClick={onClick} onDragEnd={syncSpeech(b.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+              ))}
+              {beziers.map((b) => (
+                <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 Q ${b.points[2] / 2 + 50} ${b.points[3] / 2 - 50} ${b.points[2]} ${b.points[3]}`} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncBezier(b.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+              ))}
+              {scribbles.map((s) => (
+                <Line
+                  key={s.id}
+                  id={s.id}
+                  {...s}
+                  stroke={s.strokeColor}
+                  strokeWidth={2}
+                  lineCap="round"
+                  lineJoin="round"
+                  globalCompositeOperation="source-over"
+                  name="selectable-shape"
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncScribble(s.id)}
+                  dragBoundFunc={function(pos) {
+                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                    return pos;
+                  }}
+                />
+              ))}
+              {textboxes.map((text) => (
+                <Text
+                  key={text.id}
+                  id={text.id}
+                  {...text}
+                  text={editingId === text.id ? "" : text.text}
+                  fontFamily="'Inter', sans-serif"
+                  fontStyle="500"
+                  fontSize={20}
+                  padding={5}
+                  name="selectable-shape"
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={syncTextbox(text.id)}
+                  dragBoundFunc={function(pos) {
+                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                    return pos;
+                  }}
+                  onDblClick={(e) => {
+                    const stageBox = stageRef.current
+                      .container()
+                      .getBoundingClientRect();
+                    const node = e.target;
+                    const absPos = node.getAbsolutePosition();
+                    setEditingId(text.id);
+                    setEditingText(text.text);
+                    setTextareaPos({
+                      x: stageBox.left + absPos.x,
+                      y: stageBox.top + absPos.y,
+                      width: node.width() * stageScale,
+                    });
+                  }}
+                />
+              ))}
+              {images.map((img) => (
+                <ImageItem
+                  key={img.id}
+                  s={img}
+                  isSelected={selectedShapeIds.includes(img.id)}
+                  draggable={isDraggable}
+                  onClick={onClick}
+                  onDragEnd={(e: any) => {
+                    const node = e.target;
+                    setImages((prev) =>
+                      prev.map((s) => s.id === img.id ? { 
+                        ...s, 
+                        x: isNaN(node.x()) ? s.x : node.x(), 
+                        y: isNaN(node.y()) ? s.y : node.y() 
+                      } : s)
+                    );
+                  }}
+                />
+              ))}
+              <Transformer
+                ref={transformerRef}
+                onTransformEnd={onTransformEnd}
+                onTransform={(e) => {
+                  // Sanitize NaN coordinates and scales during active transform
+                  const transformer = e.target as any;
+                  const nodes = transformer.nodes();
+                  nodes.forEach((node: any) => {
+                    if (isNaN(node.x())) node.x(0);
+                    if (isNaN(node.y())) node.y(0);
+                    if (isNaN(node.scaleX())) node.scaleX(1);
+                    if (isNaN(node.scaleY())) node.scaleY(1);
+                  });
+                }}
+                boundBoxFunc={(oldBox, newBox) => {
+                  // Limit resize and prevent NaN
+                  if (
+                    isNaN(newBox.x) ||
+                    isNaN(newBox.y) ||
+                    isNaN(newBox.width) || 
+                    isNaN(newBox.height) ||
+                    isNaN(newBox.rotation) ||
+                    Math.abs(newBox.width) < 5 || 
+                    Math.abs(newBox.height) < 5
+                  ) {
+                    return oldBox;
+                  }
+                  return newBox;
+                }}
+              />
+              {isSelectingRectangle && (
+                <Rect
+                  id="selection-rectangle"
+                  listening={false}
+                  x={Math.min(selectionStart.x, selectionEnd.x)}
+                  y={Math.min(selectionStart.y, selectionEnd.y)}
+                  width={Math.abs(selectionEnd.x - selectionStart.x)}
+                  height={Math.abs(selectionEnd.y - selectionStart.y)}
+                  fill="rgba(59, 130, 246, 0.1)"
+                  stroke="#3b82f6"
+                  strokeWidth={1}
+                  dash={[5, 5]}
+                />
+              )}
+            </Group>
           </Layer>
         </Stage>
 
-        {/* EMPTY STATE UI */}
-        {isEmpty && (
+        {/* EMPTY STATE — only in infinite mode as full overlay */}
+        {isEmpty && canvasMode === 'infinite' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <div className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl flex items-center justify-center mb-4 opacity-70">
               <LuPencil size="1.5rem" className="text-gray-400 dark:text-gray-500" />
@@ -995,7 +2349,65 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         onClose={() => setIsModalOpen(false)}
         data={analysisData}
         loading={isAnalyzing}
+        onInsertImage={handleInsertImageFromModal}
       />
+
+      {/* Mermaid Diagram Modal */}
+      {isMermaidModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMermaidModalOpen(false)} />
+          <div className="relative w-full max-w-xl bg-white dark:bg-[#1e1e1e] rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-white/5 flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
+                  <TbRoute className="text-blue-500" />
+                  Insert Mermaid Diagram
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Render Mermaid code into an image on your canvas</p>
+              </div>
+              <button 
+                onClick={() => setIsMermaidModalOpen(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
+              >
+                <IoMdTrash size="1.2rem" className="text-gray-400" />
+              </button>
+            </div>
+            
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Mermaid Code</label>
+                <textarea
+                  value={mermaidCode}
+                  onChange={(e) => setMermaidCode(e.target.value)}
+                  className="w-full h-48 p-4 bg-gray-50 dark:bg-black/20 rounded-2xl border border-gray-200 dark:border-white/5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm resize-none dark:text-gray-200"
+                  placeholder="graph TD..."
+                />
+              </div>
+              
+              <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-500/10">
+                <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed font-medium">
+                  <strong>Tip:</strong> You can use Flowcharts, Sequence Diagrams, Gantt charts, and more. The diagram will be inserted as a high-quality image at your current position.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex justify-end gap-3">
+              <button
+                onClick={() => setIsMermaidModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleInsertMermaid}
+                className="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-500/25 transition-all active:scale-95"
+              >
+                Insert to Canvas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,10 +5,11 @@ import ChatWindow from "./components/chat-window.tsx";
 import Login from "./components/login.tsx";
 import { ThemeContext } from "./contexts/ThemeContext.jsx";
 import { auth } from "./utils/firebase";
-import { supabase } from "./utils/supabase";
 import { onIdTokenChanged } from "firebase/auth";
 import axios from "axios";
 import RecentSessionsSidebar from "./components/RecentSessionsSidebar.tsx";
+import { MessageCircle, X } from "lucide-react";
+import Tooltip from "./components/Tooltip";
 
 function App() {
   const { isDark } = useContext(ThemeContext);
@@ -16,6 +17,7 @@ function App() {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState(() => localStorage.getItem("current_session_id"));
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const handleNewSession = async () => {
     try {
@@ -87,38 +89,72 @@ function App() {
         <Navbar user={user} role={role} />
       </div>
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
-        {/* Recent Sessions Sidebar (Teacher Only) */}
-        {role === 'teacher' && (
-          <RecentSessionsSidebar
-            activeSessionId={activeSessionId}
-            onSelectSession={(id) => {
-              setActiveSessionId(id);
-              localStorage.setItem('current_session_id', id);
-            }}
-            onNewSession={handleNewSession}
-          />
-        )}
+      {/* Main Content — canvas fills full area, panels float on top */}
+      <div className="relative flex-1 overflow-hidden">
 
-        {/* Canvas - Only for Teacher and Admin */}
+        {/* Canvas — full-screen background for Teacher / Admin */}
         {(role === 'teacher' || role === 'admin') ? (
-          <div className="flex-1 overflow-hidden border-l border-gray-200 dark:border-[#303030]">
+          <div className="absolute inset-0">
             <Canvas activeSessionId={activeSessionId} onNewSession={handleNewSession} />
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-[#121212] text-gray-500 dark:text-gray-400 transition-colors">
-            <div className="text-center p-8">
-              <h2 className="text-2xl font-bold mb-4">Welcome, Student!</h2>
-              <p>You can view diagrams shared by your teacher and use the AI Chatbot for any doubts.</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-[#121212] transition-colors">
+            <div className="text-center p-8 bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-lg border border-gray-200 dark:border-[#303030]">
+              <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Welcome, Student!</h2>
+              <p className="text-gray-500 dark:text-gray-400">You can use the AI Chatbot for any doubts.</p>
             </div>
           </div>
         )}
 
-        {/* Chat - Available to everyone */}
-        <div className="h-1/2 md:h-full md:w-[380px] shrink-0 border-t md:border-t-0 md:border-l border-gray-200 dark:border-[#303030] overflow-hidden bg-white dark:bg-[#1e1e1e] transition-colors">
-          <ChatWindow activeSessionId={activeSessionId} />
+        {/* Floating Sidebar (Teacher only) — left edge */}
+        {role === 'teacher' && (
+          <div className="absolute left-0 top-0 h-full z-20">
+            <RecentSessionsSidebar
+              activeSessionId={activeSessionId}
+              onSelectSession={(id) => {
+                setActiveSessionId(id);
+                localStorage.setItem('current_session_id', id);
+              }}
+              onNewSession={handleNewSession}
+            />
+          </div>
+        )}
+
+        {/* Floating Chat Section */}
+        <div className="absolute right-6 bottom-6 z-50 flex flex-col items-end gap-4 pointer-events-none">
+          {/* Chat Window Card */}
+          {isChatOpen && (
+            <div
+              className="w-[400px] h-[600px] bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in slide-in-from-bottom-10 duration-300"
+            >
+              <div className="flex-1 overflow-hidden relative">
+                <ChatWindow activeSessionId={activeSessionId} />
+                {/* Close button inside chat header area if needed, or top right */}
+                <button
+                  onClick={() => setIsChatOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-gray-400 hover:text-gray-600 transition-colors z-30"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Toggle Button */}
+          <Tooltip text={isChatOpen ? "Close AI Chat" : "Open AI Chat"}>
+            <button
+              onClick={() => setIsChatOpen((v) => !v)}
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-xl pointer-events-auto border border-white/20 ${
+                isChatOpen
+                  ? "bg-gray-800 dark:bg-white text-white dark:text-gray-900 rotate-90 scale-90"
+                  : "bg-blue-600 hover:bg-blue-700 text-white hover:scale-110 active:scale-95"
+              }`}
+            >
+              {isChatOpen ? <X size={24} /> : <MessageCircle size={28} />}
+            </button>
+          </Tooltip>
         </div>
+
       </div>
     </div>
   );

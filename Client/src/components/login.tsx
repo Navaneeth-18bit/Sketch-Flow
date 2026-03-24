@@ -135,7 +135,7 @@ const Login: React.FC = () => {
                         <button
                             onClick={handleRoleSubmit}
                             disabled={loading}
-                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-500/20"
+                            className="w-full py-3 px-4 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-yellow-500/20"
                         >
                             {loading ? 'Processing...' : 'Complete Setup'}
                         </button>
@@ -149,16 +149,16 @@ const Login: React.FC = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#121212] p-4 transition-colors relative overflow-hidden">
             {/* Background Blob decoration */}
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/10 dark:bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-yellow-400/10 dark:bg-yellow-400/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/10 dark:bg-purple-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none" />
 
             <div className="w-full max-w-md bg-white dark:bg-[#1e1e1e] p-8 rounded-3xl shadow-2xl shadow-gray-200/50 dark:shadow-none dark:border dark:border-[#2a2a2a] relative z-10 transition-all">
                 {/* SketchFlow Logo and Heading */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white mb-4 shadow-lg shadow-blue-500/30">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-yellow-400 text-gray-900 mb-4 shadow-lg shadow-yellow-500/30">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 5-3-3H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2" /><path d="M8 18h1" /><path d="M18.4 9.6a2 2 0 1 1 3 3L17 19l-4 1 1-4Z" /></svg>
                     </div>
-                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">SketchFlow</h1>
+                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 to-yellow-600 dark:from-yellow-400 dark:to-yellow-500">SketchFlow</h1>
                     <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">{isLogin ? 'Welcome back! Please login to your account.' : 'Create an account to start collaborating.'}</p>
                 </div>
 
@@ -201,7 +201,7 @@ const Login: React.FC = () => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 px-4 mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25 flex justify-center items-center"
+                        className="w-full py-3 px-4 mt-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/25 flex justify-center items-center"
                     >
                         {loading ? (
                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

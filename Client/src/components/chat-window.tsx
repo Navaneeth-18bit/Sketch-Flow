@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useContext } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ThemeContext } from "../contexts/ThemeContext.jsx";
 
 type Message = {
@@ -187,20 +188,21 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
             {msg.content && (
               <div
                 className={`px-4 py-3 rounded-2xl text-sm shadow-sm transition-colors ${msg.role === "user"
-                  ? "bg-blue-600 text-white rounded-tr-none shadow-blue-500/20"
+                  ? "bg-yellow-400 text-gray-900 rounded-tr-none shadow-yellow-500/20"
                   : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-800 dark:text-gray-200 rounded-tl-none border border-gray-200 dark:border-[#333]"
                   }`}
               >
                 {msg.role === "assistant" ? (
                   <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     components={{
                       h1: ({ children }) => <h1 className="font-bold text-lg mb-2 border-b border-gray-200 dark:border-gray-700 pb-1">{children}</h1>,
                       h2: ({ children }) => <h2 className="font-semibold text-base mb-2">{children}</h2>,
-                      p: ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
+                      p: ({ children }) => <p className="mb-2 leading-relaxed text-gray-700 dark:text-gray-300">{children}</p>,
                       ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
                       li: ({ children }) => <li className="ml-2">{children}</li>,
                       code: ({ children }) => (
-                        <code className="bg-white/50 dark:bg-black/30 px-1.5 py-0.5 rounded text-xs font-mono border border-gray-200 dark:border-gray-700">
+                        <code className="bg-gray-100 dark:bg-black/30 px-1.5 py-0.5 rounded text-xs font-mono border border-gray-200 dark:border-gray-700">
                           {children}
                         </code>
                       ),
@@ -208,6 +210,29 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
                         <pre className="bg-gray-800 dark:bg-black text-gray-50 p-3 rounded-xl text-xs overflow-x-auto my-3 shadow-inner">
                           {children}
                         </pre>
+                      ),
+                      // Table styling
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                          <table className="w-full text-sm text-left border-collapse bg-white dark:bg-black/20">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      thead: ({ children }) => (
+                        <thead className="bg-gray-50 dark:bg-white/5 text-gray-900 dark:text-gray-100 uppercase text-[10px] font-bold tracking-wider">
+                          {children}
+                        </thead>
+                      ),
+                      th: ({ children }) => (
+                        <th className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 font-bold">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300">
+                          {children}
+                        </td>
                       ),
                     }}
                   >
@@ -279,7 +304,7 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
         <button
           onClick={handleSend}
           disabled={!input.trim()}
-          className="w-12 h-[46px] flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-blue-500/20"
+          className="w-12 h-[46px] flex items-center justify-center rounded-xl bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-yellow-500/20"
           aria-label="Send Message"
         >
           <svg className="w-5 h-5 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

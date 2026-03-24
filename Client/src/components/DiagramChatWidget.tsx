@@ -59,7 +59,7 @@ const DiagramChatWidget: React.FC<DiagramChatWidgetProps> = ({ diagramData, onCl
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 bg-blue-600 text-white">
+      <div className="flex items-center justify-between p-3 bg-yellow-400 text-gray-900">
         <h3 className="text-sm font-semibold">Diagram Chat</h3>
         <button onClick={onClose} className="p-1 hover:bg-blue-700 rounded transition-colors">
           <X className="w-4 h-4" />
@@ -74,11 +74,10 @@ const DiagramChatWidget: React.FC<DiagramChatWidgetProps> = ({ diagramData, onCl
             className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] p-3 rounded-lg text-sm ${
-                msg.sender === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-none'
+              className={`max-w-[80%] p-3 rounded-lg text-sm ${msg.sender === 'user'
+                  ? 'bg-yellow-400 text-gray-900 rounded-br-none'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none'
-              }`}
+                }`}
             >
               {msg.text}
             </div>
@@ -115,7 +114,7 @@ const DiagramChatWidget: React.FC<DiagramChatWidgetProps> = ({ diagramData, onCl
           <button
             type="submit"
             disabled={!input.trim()}
-            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="p-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 disabled:opacity-50 transition-colors"
           >
             <Send className="w-4 h-4" />
           </button>

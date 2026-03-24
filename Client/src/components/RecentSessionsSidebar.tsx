@@ -41,12 +41,12 @@ export default function RecentSessionsSidebar({
     };
 
     return (
-        <div className={`bg-white dark:bg-[#1e1e1e] border-r border-gray-200 dark:border-[#303030] flex flex-col h-full transition-all duration-300 ease-in-out z-10 shrink-0 hidden md:flex ${isCollapsed ? "w-[72px]" : "w-64"}`}>
+        <div className={`bg-white/95 dark:bg-[#1e1e1e]/95 backdrop-blur-md border-r border-gray-200/70 dark:border-[#303030] flex flex-col h-full transition-all duration-300 ease-in-out z-10 shrink-0 hidden md:flex shadow-2xl ${isCollapsed ? "w-[72px]" : "w-64"}`}>
             <div className={`p-4 border-b border-gray-200 dark:border-[#303030] flex items-center transition-all ${isCollapsed ? "flex-col gap-3 justify-center" : "justify-between"}`}>
                 <button
                     onClick={onNewSession}
                     title="New Session"
-                    className={`flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-all shadow-sm ${isCollapsed ? "w-10 h-10 p-0" : "flex-1 py-2 px-4 gap-2 mr-2"}`}
+                    className={`flex items-center justify-center bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-xl transition-all shadow-[0_2px_10px_rgba(250,204,21,0.2)] ${isCollapsed ? "w-10 h-10 p-0" : "flex-1 py-2 px-4 gap-2 mr-2"}`}
                 >
                     <MessageSquarePlus size={18} />
                     {!isCollapsed && <span className="truncate">New Session</span>}
