@@ -1,4 +1,4 @@
-import rough from 'roughjs';
+
 
 export interface BoundingBox {
   minX: number;
@@ -97,75 +97,123 @@ export const renderToOffscreenCanvas = async (elements: any[], box: BoundingBox)
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-  const rc = rough.canvas(canvas);
-  const gen = rc.generator;
-
   for (const el of elements) {
     const offsetX = -box.minX;
     const offsetY = -box.minY;
     const x = (el.x || 0) + offsetX;
     const y = (el.y || 0) + offsetY;
 
-    const options = {
-      stroke: el.stroke || '#000',
-      fill: el.fillColor === 'transparent' ? undefined : el.fillColor,
-      strokeWidth: el.strokeWidth || 2,
-      roughness: el.sloppiness || 0,
-      fillStyle: 'hachure',
-      seed: el.seed || 1,
-    };
+    const stroke = el.stroke || '#000';
+    const fill = el.fillColor === 'transparent' ? undefined : el.fillColor;
+    const strokeWidth = el.strokeWidth || 2;
 
-    let drawable: any = null;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     try {
-      if (el.type === 'rectangle') drawable = gen.rectangle(x, y, el.width, el.height, options);
-      else if (el.type === 'circle') drawable = gen.circle(x, y, el.radius * 2, options);
-      else if (el.type === 'ellipse') drawable = gen.ellipse(x, y, el.radiusX * 2, el.radiusY * 2, options);
+      if (el.type === 'rectangle') {
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fillRect(x, y, el.width, el.height);
+        }
+        ctx.strokeRect(x, y, el.width, el.height);
+      }
+      else if (el.type === 'circle') {
+        ctx.beginPath();
+        ctx.arc(x, y, el.radius, 0, Math.PI * 2);
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.stroke();
+      }
+      else if (el.type === 'ellipse') {
+        ctx.beginPath();
+        ctx.ellipse(x, y, el.radiusX, el.radiusY || el.radiusX, 0, 0, Math.PI * 2);
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.stroke();
+      }
       else if (['triangle', 'diamond', 'pentagon', 'hexagon'].includes(el.type)) {
         const sides = el.type === 'triangle' ? 3 : el.type === 'diamond' ? 4 : el.type === 'pentagon' ? 5 : 6;
-        const pts: [number, number][] = [];
+        const radius = el.radius || 0;
+        ctx.beginPath();
         for (let i = 0; i < sides; i++) {
-          pts.push([
-            x + (el.radius || 0) * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2),
-            y + (el.radius || 0) * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2)
-          ]);
+          const px = x + radius * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2);
+          const py = y + radius * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
         }
-        drawable = gen.polygon(pts, options);
+        ctx.closePath();
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.stroke();
       }
       else if (el.type === 'star') {
-        const pts: [number, number][] = [];
+        const outerRadius = el.outerRadius || 0;
+        const innerRadius = el.innerRadius || 0;
+        ctx.beginPath();
         for (let i = 0; i < 10; i++) {
-          const r = i % 2 === 0 ? (el.outerRadius || 0) : (el.innerRadius || 0);
-          pts.push([
-            x + r * Math.cos(i * Math.PI / 5 - Math.PI / 2),
-            y + r * Math.sin(i * Math.PI / 5 - Math.PI / 2)
-          ]);
+          const r = i % 2 === 0 ? outerRadius : innerRadius;
+          const px = x + r * Math.cos(i * Math.PI / 5 - Math.PI / 2);
+          const py = y + r * Math.sin(i * Math.PI / 5 - Math.PI / 2);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
         }
-        drawable = gen.polygon(pts, options);
+        ctx.closePath();
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.stroke();
       }
       else if (el.type === 'parallelogram') {
-        const skew = Math.abs(el.height) * 0.3;
-        drawable = gen.polygon([[x, y + el.height], [x + el.width, y + el.height], [x + el.width - skew, y], [x - skew, y]], options);
+        const w = el.width;
+        const h = el.height;
+        const skew = Math.abs(h) * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(x, y + h);
+        ctx.lineTo(x + w, y + h);
+        ctx.lineTo(x + w - skew, y);
+        ctx.lineTo(x - skew, y);
+        ctx.closePath();
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.stroke();
       }
       else if (el.type === 'scribble') {
-        if (el.points) {
-          const pts: [number, number][] = [];
-          for (let i = 0; i < el.points.length; i += 2) {
-            pts.push([el.points[i] + x, el.points[i + 1] + y]);
+        if (el.points && el.points.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(el.points[0] + x, el.points[1] + y);
+          for (let i = 2; i < el.points.length; i += 2) {
+            ctx.lineTo(el.points[i] + x, el.points[i + 1] + y);
           }
-          drawable = gen.curve(pts, options);
+          ctx.stroke();
         }
       }
       else if (el.type === 'arrow') {
-        if (el.points) {
-          const pts: [number, number][] = [];
-          for (let i = 0; i < el.points.length; i += 2) {
-            pts.push([el.points[i] + x, el.points[i + 1] + y]);
+        if (el.points && el.points.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(el.points[0] + x, el.points[1] + y);
+          for (let i = 2; i < el.points.length; i += 2) {
+            ctx.lineTo(el.points[i] + x, el.points[i + 1] + y);
           }
-          drawable = gen.linearPath(pts, options);
-          // Simple arrow head
-          const [x1, y1] = pts[pts.length - 2];
-          const [x2, y2] = pts[pts.length - 1];
+          ctx.stroke();
+
+          // Arrow head
+          const len = el.points.length;
+          const x1 = el.points[len - 4] + x;
+          const y1 = el.points[len - 3] + y;
+          const x2 = el.points[len - 2] + x;
+          const y2 = el.points[len - 1] + y;
           const angle = Math.atan2(y2 - y1, x2 - x1);
           const headLen = 10;
           ctx.beginPath();
@@ -201,8 +249,8 @@ export const renderToOffscreenCanvas = async (elements: any[], box: BoundingBox)
         ctx.lineTo(x + w * 0.4, y + h * 0.8);
         ctx.lineTo(x, y + h * 0.8);
         ctx.closePath();
-        if (options.fill) {
-          ctx.fillStyle = options.fill;
+        if (fill) {
+          ctx.fillStyle = fill;
           ctx.fill();
         }
         ctx.stroke();
@@ -235,8 +283,6 @@ export const renderToOffscreenCanvas = async (elements: any[], box: BoundingBox)
           });
         }
       }
-
-      if (drawable) rc.draw(drawable);
     } catch (e) {
       console.error(`Error rendering element ${el.id} of type ${el.type}:`, e);
     }

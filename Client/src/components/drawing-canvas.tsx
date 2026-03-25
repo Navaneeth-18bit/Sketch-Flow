@@ -1,7 +1,13 @@
 import { TbRectangle, TbEraser, TbTriangle, TbPentagon, TbHexagon, TbOvalVertical, TbVectorBezier2, TbRoute } from "react-icons/tb";
 import { IoMdDownload, IoMdTrash } from "react-icons/io";
 import { FaLongArrowAltRight, FaRegStar } from "react-icons/fa";
-import { LuPencil, LuType, LuUndo2, LuRedo2, LuHand, LuInfinity, LuFile } from "react-icons/lu";
+import {
+  LuPencil, LuType, LuUndo2, LuRedo2, LuHand, LuInfinity, LuFile, LuPenTool as LuFileEdit, LuMonitor, LuPlus, LuSettings2,
+  LuChevronDown, LuSave, LuDownload, LuCopy, LuClipboard, LuTrash2, LuLayoutGrid,
+  LuMaximize, LuZoomIn, LuZoomOut, LuSquare, LuCircle,
+  LuArrowRight, LuPenTool, LuImage, LuStickyNote,
+  LuLayers, LuGroup, LuUngroup
+} from 'react-icons/lu';
 import { GiArrowCursor } from "react-icons/gi";
 import { FaRegCircle, FaRegCommentDots } from "react-icons/fa6";
 import { BsDiamond } from "react-icons/bs";
@@ -23,10 +29,11 @@ import {
   Group,
   Image,
 } from "react-konva";
+import Konva from "konva";
 import mermaid from "mermaid";
-import { useRef, useState, useEffect, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import { v4 as uuidv4 } from "uuid";
-import rough from "roughjs";
+
 import { ACTIONS } from "../constants";
 import { auth } from "../utils/firebase";
 import Tooltip from "./Tooltip";
@@ -34,23 +41,52 @@ import DiagramAnalysisModal from "./DiagramAnalysisModal";
 import { DiagramData } from "../types";
 import axios from "axios";
 import { getBoundingBox, renderToOffscreenCanvas } from "../utils/canvasUtils";
+import PagesSidebar from "./PagesSidebar";
 
 // Grid pattern will be created on mount so it respects current theme CSS variables
 
 interface CanvasProps {
   activeSessionId: string | null;
   onNewSession: () => void;
+  onStateChange: (state: {
+    canUndo: boolean;
+    canRedo: boolean;
+    hasSelection: boolean;
+    appMode: 'single' | 'pages';
+  }) => void;
 }
 
-const SloppyShape = ({ type, x, y, width, height, radius, radiusX, radiusY, innerRadius, outerRadius, stroke, fillColor, strokeWidth, sloppiness, seed, isSelected, draggable, onClick, onDragEnd, id }: any) => {
-  const isSloppy = sloppiness > 0;
+interface CanvasPage {
+  id: string;
+  name: string;
+  rectangles: any[];
+  circles: any[];
+  arrows: any[];
+  scribbles: any[];
+  textboxes: any[];
+  triangles: any[];
+  diamonds: any[];
+  pentagons: any[];
+  hexagons: any[];
+  ellipses: any[];
+  stars: any[];
+  parallelograms: any[];
+  images: any[];
+  connectors: any[];
+  speechBubbles: any[];
+  beziers: any[];
+  history: any[];
+  historyIndex: number;
+}
+
+const SloppyShape = ({ type, x, y, width, height, radius, radiusX, radiusY, innerRadius, outerRadius, stroke, fillColor, strokeWidth, isSelected, draggable, onClick, onDragEnd, id }: any) => {
   const nodeRef = useRef<any>(null);
 
   // Hardened coordinate/dimension guards
   const safeX = isNaN(x) ? 0 : x;
   const safeY = isNaN(y) ? 0 : y;
-  const safeW = isNaN(width) ? 10 : width;
-  const safeH = isNaN(height) ? 10 : height;
+  const safeW = isNaN(width) ? 10 : Math.min(Math.abs(width), 4000);
+  const safeH = isNaN(height) ? 10 : Math.min(Math.abs(height), 4000);
   const safeR = isNaN(radius) ? 5 : radius;
   const safeRX = isNaN(radiusX) ? 5 : radiusX;
   const safeRY = isNaN(radiusY) ? 5 : radiusY;
@@ -61,108 +97,6 @@ const SloppyShape = ({ type, x, y, width, height, radius, radiusX, radiusY, inne
   const finalStrokeWidth = isSelected ? (strokeWidth || 2) + 0.5 : (strokeWidth || 2);
   const finalFill = fillColor === 'transparent' ? undefined : fillColor;
 
-  const drawable = useMemo(() => {
-    if (!isSloppy) return null;
-    const gen = rough.generator();
-    const options = {
-      stroke: finalStroke,
-      fill: finalFill,
-      strokeWidth: finalStrokeWidth,
-      roughness: sloppiness,
-      fillStyle: 'hachure',
-      seed: seed || 1,
-    };
-
-    if (type === 'rectangle') return gen.rectangle(0, 0, width, height, options);
-    if (type === 'circle') return gen.circle(0, 0, radius * 2, options);
-    if (type === 'ellipse') return gen.ellipse(0, 0, radiusX * 2, radiusY * 2, options);
-    if (type === 'triangle' || type === 'diamond' || type === 'pentagon' || type === 'hexagon') {
-      const sides = type === 'triangle' ? 3 : type === 'diamond' ? 4 : type === 'pentagon' ? 5 : 6;
-      const pts: [number, number][] = [];
-      for (let i = 0; i < sides; i++) {
-        pts.push([
-          (radius || 0) * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2),
-          (radius || 0) * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2)
-        ]);
-      }
-      return gen.polygon(pts, options);
-    }
-    if (type === 'star') {
-      const pts: [number, number][] = [];
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? (outerRadius || 0) : (innerRadius || 0);
-        pts.push([
-          r * Math.cos(i * Math.PI / 5 - Math.PI / 2),
-          r * Math.sin(i * Math.PI / 5 - Math.PI / 2)
-        ]);
-      }
-      return gen.polygon(pts, options);
-    }
-    if (type === 'parallelogram') {
-      const skew = Math.abs(height) * 0.3;
-      return gen.polygon([[0, height], [width, height], [width - skew, 0], [-skew, 0]], options);
-    }
-    return null;
-  }, [type, width, height, radius, radiusX, radiusY, innerRadius, outerRadius, finalStroke, finalFill, finalStrokeWidth, sloppiness, seed, isSloppy]);
-
-  const pathData = useMemo(() => {
-    try {
-      if (type === 'rectangle') return `M 0 0 L ${width || 0} 0 L ${width || 0} ${height || 0} L 0 ${height || 0} Z`;
-      if (type === 'circle') {
-        const r = radius || 0;
-        return `M ${-r} 0 A ${r} ${r} 0 1 0 ${r} 0 A ${r} ${r} 0 1 0 ${-r} 0 Z`;
-      }
-      if (type === 'ellipse') {
-        const rx = radiusX || 0; const ry = radiusY || 0;
-        return `M ${-rx} 0 A ${rx} ${ry} 0 1 0 ${rx} 0 A ${rx} ${ry} 0 1 0 ${-rx} 0 Z`;
-      }
-      if (type === 'parallelogram') {
-        const w = width || 0; const h = height || 0; const skew = Math.abs(h) * 0.3;
-        return `M 0 ${h} L ${w} ${h} L ${w - skew} 0 L ${-skew} 0 Z`;
-      }
-      if (type === 'triangle' || type === 'diamond' || type === 'pentagon' || type === 'hexagon') {
-        const r = radius || 0;
-        const sides = type === 'triangle' ? 3 : type === 'diamond' ? 4 : type === 'pentagon' ? 5 : 6;
-        let p = "";
-        for (let i = 0; i < sides; i++) {
-          const px = r * Math.cos(i * 2 * Math.PI / sides - Math.PI / 2);
-          const py = r * Math.sin(i * 2 * Math.PI / sides - Math.PI / 2);
-          p += `${i === 0 ? 'M' : 'L'} ${px} ${py} `;
-        }
-        return p + " Z";
-      }
-      if (type === 'star') {
-        const or = safeOR; const ir = safeIR;
-        let p = "";
-        for (let i = 0; i < 10; i++) {
-          const r = i % 2 === 0 ? or : ir;
-          const px = r * Math.cos(i * Math.PI / 5 - Math.PI / 2);
-          const py = r * Math.sin(i * Math.PI / 5 - Math.PI / 2);
-          p += `${i === 0 ? 'M' : 'L'} ${px} ${py} `;
-        }
-        return p + " Z";
-      }
-    } catch (e) { console.error(e); }
-    return "";
-  }, [type, safeW, safeH, safeR, safeRX, safeRY, safeOR, safeIR]);
-
-  // Performance: cache non-active shapes
-  useEffect(() => {
-    if (nodeRef.current && !isSelected && !draggable && isSloppy) {
-      const timer = setTimeout(() => {
-        if (nodeRef.current) {
-          nodeRef.current.cache({
-            offset: 10, // padding for rough edges
-          });
-          nodeRef.current.getLayer()?.batchDraw();
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    } else if (nodeRef.current) {
-      nodeRef.current.clearCache();
-    }
-  }, [isSelected, draggable, isSloppy, drawable, pathData, finalFill, finalStroke, finalStrokeWidth]);
-
   const dragBoundFunc = (pos: { x: number, y: number }) => {
     if (isNaN(pos.x) || isNaN(pos.y)) {
       return nodeRef.current ? nodeRef.current.absolutePosition() : pos;
@@ -170,49 +104,20 @@ const SloppyShape = ({ type, x, y, width, height, radius, radiusX, radiusY, inne
     return pos;
   };
 
-  if (!isSloppy) {
-    if (type === 'rectangle') return <Rect ref={nodeRef} x={safeX} y={safeY} width={safeW} height={safeH} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'circle') return <Circle ref={nodeRef} x={safeX} y={safeY} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'ellipse') return <Ellipse ref={nodeRef} x={safeX} y={safeY} radiusX={safeRX} radiusY={safeRY} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'triangle') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={3} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'diamond') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={4} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'pentagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={5} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'hexagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={6} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'star') return <Star ref={nodeRef} x={safeX} y={safeY} numPoints={5} innerRadius={safeIR} outerRadius={safeOR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    if (type === 'parallelogram') {
-      const skew = Math.abs(safeH) * 0.3;
-      return <Line ref={nodeRef} x={safeX} y={safeY} points={[0, safeH, safeW, safeH, safeW - skew, 0, -skew, 0]} closed fill={finalFill} stroke={finalStroke} strokeWidth={finalStrokeWidth} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
-    }
+  if (type === 'rectangle') return <Rect ref={nodeRef} x={safeX} y={safeY} width={safeW} height={safeH} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'circle') return <Circle ref={nodeRef} x={safeX} y={safeY} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'ellipse') return <Ellipse ref={nodeRef} x={safeX} y={safeY} radiusX={safeRX} radiusY={safeRY} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'triangle') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={3} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'diamond') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={4} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'pentagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={5} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'hexagon') return <RegularPolygon ref={nodeRef} x={safeX} y={safeY} sides={6} radius={safeR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'star') return <Star ref={nodeRef} x={safeX} y={safeY} numPoints={5} innerRadius={safeIR} outerRadius={safeOR} stroke={finalStroke} strokeWidth={finalStrokeWidth} fill={finalFill} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
+  if (type === 'parallelogram') {
+    const skew = Math.abs(safeH) * 0.3;
+    return <Line ref={nodeRef} x={safeX} y={safeY} points={[0, safeH, safeW, safeH, safeW - skew, 0, -skew, 0]} closed fill={finalFill} stroke={finalStroke} strokeWidth={finalStrokeWidth} draggable={draggable} onClick={onClick} onDragEnd={onDragEnd} dragBoundFunc={dragBoundFunc} id={id} name="selectable-shape" />;
   }
 
-  return (
-    <Path
-      ref={nodeRef}
-      x={safeX}
-      y={safeY}
-      draggable={draggable}
-      onClick={onClick}
-      onTap={onClick}
-      onDragEnd={onDragEnd}
-      dragBoundFunc={dragBoundFunc}
-      id={id}
-      name="selectable-shape"
-      data={pathData}
-      stroke={finalStroke}
-      strokeWidth={finalStrokeWidth}
-      fill={finalFill || "transparent"}
-      sceneFunc={(context: any, shape: any) => {
-        if (context.isHit) {
-          context.fillStrokeShape(shape);
-          return;
-        }
-        if (drawable) {
-          const roughCanvas = rough.canvas(context._context);
-          roughCanvas.draw(drawable);
-        }
-      }}
-    />
-  );
+  return null;
 };
 
 const ImageItem = ({ s, isSelected, draggable, onClick, onDragEnd }: any) => {
@@ -244,7 +149,7 @@ const ImageItem = ({ s, isSelected, draggable, onClick, onDragEnd }: any) => {
       onClick={onClick}
       onTap={onClick}
       onDragEnd={onDragEnd}
-      dragBoundFunc={function(pos) {
+      dragBoundFunc={function (pos) {
         if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
         return pos;
       }}
@@ -253,7 +158,8 @@ const ImageItem = ({ s, isSelected, draggable, onClick, onDragEnd }: any) => {
   );
 };
 
-export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasProps) {
+const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
+  const { activeSessionId, onNewSession, onStateChange } = props;
   const [gridPattern, setGridPattern] = useState<HTMLCanvasElement | null>(
     null,
   );
@@ -268,7 +174,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const [fillColor, setFillColor] = useState("transparent"); // Default no fill
   const [penColor, setPenColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(2);
-  const [sloppiness, setSloppiness] = useState(0);
+
   const [rectangles, setRectangles] = useState<any[]>([]);
   const [circles, setCircles] = useState<any[]>([]);
   const [arrows, setArrows] = useState<any[]>([]);
@@ -287,6 +193,11 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const [stars, setStars] = useState<any[]>([]);
   const [parallelograms, setParallelograms] = useState<any[]>([]);
   const [images, setImages] = useState<any[]>([]);
+
+  // Multi-page State
+  const [appMode, setAppMode] = useState<'single' | 'pages'>('single');
+  const [pages, setPages] = useState<CanvasPage[]>([]);
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
 
   const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
   const [fillMenuOpen, setFillMenuOpen] = useState(false);
@@ -332,13 +243,13 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     stroke: strokeColor,
     fill: "transparent",
     strokeWidth: 2,
-    sloppiness: 0,
   });
 
   // Sync activeProps with theme when it changes
   useEffect(() => {
     setActiveProps(prev => ({ ...prev, stroke: strokeColor }));
   }, [strokeColor]);
+
   const isPaining = useRef(false);
   const currentShapeId = useRef<string | null>(null);
   const isDraggable = action === ACTIONS.SELECT;
@@ -473,6 +384,154 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setImages(s.images);
   };
 
+  // --- Multi-page Management Functions ---
+
+  const canUndo = appMode === 'pages'
+    ? (pages.find(p => p.id === currentPageId)?.historyIndex || 0) > 0
+    : historyIndex.current > 0;
+  const canRedo = appMode === 'pages'
+    ? (pages.find(p => p.id === currentPageId)?.historyIndex || 0) < (pages.find(p => p.id === currentPageId)?.history.length || 0) - 1
+    : historyIndex.current < historyStack.current.length - 1;
+
+  // Expose actions to parent via ref
+  useImperativeHandle(ref, () => ({
+    handleUndo,
+    handleRedo,
+    handleDeleteSelected,
+    handleCopySelected,
+    handleInternalPaste,
+    handleExport,
+    handleInsertShape: (type: string) => {
+      if (type === 'RECTANGLE') setAction(ACTIONS.RECTANGLE);
+      else if (type === 'CIRCLE') setAction(ACTIONS.CIRCLE);
+      else if (type === 'ARROW') setAction(ACTIONS.ARROW);
+      else if (type === 'SCRIBBLE') setAction(ACTIONS.SCRIBBLE);
+      else if (type === 'TEXT') setAction(ACTIONS.TEXT);
+    },
+    handleToggleMode: togglePagesMode,
+    handleAddPage,
+    handleDuplicatePage: () => currentPageId && handleDuplicatePage(currentPageId),
+    handleDeletePage: () => currentPageId && handleDeletePage(currentPageId),
+    handleZoomIn: () => {
+      const stage = stageRef.current;
+      if (stage) {
+        const scaleBy = 1.2;
+        const oldScale = stage.scaleX();
+        const newScale = Math.min(oldScale * scaleBy, 8);
+        setStageScale(newScale);
+      }
+    },
+    handleZoomOut: () => {
+      const stage = stageRef.current;
+      if (stage) {
+        const scaleBy = 1.2;
+        const oldScale = stage.scaleX();
+        const newScale = Math.max(oldScale / scaleBy, 0.1);
+        setStageScale(newScale);
+      }
+    },
+    handleToggleGrid: () => {
+      // Logic for toggle grid could be added here
+    }
+  }));
+
+  // Report state changes to parent (report only if something changed)
+  const lastStateReport = useRef<string>('');
+  useEffect(() => {
+    const currentState = JSON.stringify({ canUndo, canRedo, hasSelection: selectedShapeIds.length > 0, appMode });
+    if (currentState !== lastStateReport.current) {
+      onStateChange({
+        canUndo,
+        canRedo,
+        hasSelection: selectedShapeIds.length > 0,
+        appMode
+      });
+      lastStateReport.current = currentState;
+    }
+  }, [canUndo, canRedo, selectedShapeIds.length, appMode, onStateChange]);
+
+  const getCurrentPageData = (id: string, name: string): CanvasPage => ({
+    id,
+    name,
+    ...getSnapshot(),
+    history: [...historyStack.current],
+    historyIndex: historyIndex.current,
+  });
+
+  const saveCurrentPageToStore = () => {
+    if (appMode !== 'pages' || !currentPageId) return;
+    setPages(prev => prev.map(p => p.id === currentPageId ? getCurrentPageData(p.id, p.name) : p));
+  };
+
+  const loadPageFromStore = (page: CanvasPage) => {
+    restoreSnapshot(page);
+    historyStack.current = [...page.history];
+    historyIndex.current = page.historyIndex;
+    setCurrentPageId(page.id);
+  };
+
+  const handleSwitchPage = (nextId: string) => {
+    if (nextId === currentPageId) return;
+    saveCurrentPageToStore();
+    const nextPage = pages.find(p => p.id === nextId);
+    if (nextPage) loadPageFromStore(nextPage);
+  };
+
+  const togglePagesMode = () => {
+    if (appMode === 'single') {
+      // Switch ON Pages Mode
+      const firstPage = getCurrentPageData(uuidv4(), "Page 1");
+      setPages([firstPage]);
+      setCurrentPageId(firstPage.id);
+      setAppMode('pages');
+    } else {
+      // Switch OFF Pages Mode
+      // Collapse current page into single canvas
+      setAppMode('single');
+      setCurrentPageId(null);
+      // Pages array remains but is hidden
+    }
+  };
+
+  const handleAddPage = () => {
+    saveCurrentPageToStore();
+    const newPageId = uuidv4();
+    const newPage: CanvasPage = {
+      id: newPageId,
+      name: `Page ${pages.length + 1}`,
+      rectangles: [], circles: [], arrows: [], scribbles: [],
+      textboxes: [], triangles: [], diamonds: [], pentagons: [],
+      hexagons: [], ellipses: [], beziers: [], connectors: [],
+      speechBubbles: [], stars: [], parallelograms: [], images: [],
+      history: [], historyIndex: -1,
+    };
+    setPages(prev => [...prev, newPage]);
+    loadPageFromStore(newPage);
+  };
+
+  const handleDeletePage = (id: string) => {
+    if (pages.length <= 1) return;
+    const newPages = pages.filter(p => p.id !== id);
+    setPages(newPages);
+    if (currentPageId === id) {
+      loadPageFromStore(newPages[0]);
+    }
+  };
+
+  const handleDuplicatePage = (id: string) => {
+    saveCurrentPageToStore();
+    const pageToDup = pages.find(p => p.id === id);
+    if (!pageToDup) return;
+    const newPage = { ...JSON.parse(JSON.stringify(pageToDup)), id: uuidv4(), name: `${pageToDup.name} (Copy)` };
+    setPages(prev => [...prev, newPage]);
+    loadPageFromStore(newPage);
+  };
+
+  const handleRenamePage = (id: string, newName: string) => {
+    setPages(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+  };
+
+
   const pushHistory = (snapshot: CanvasState) => {
     // Drop any future states when a new action is taken
     const newStack = historyStack.current.slice(0, historyIndex.current + 1);
@@ -501,8 +560,6 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setSelectedShapeType(null);
   };
 
-  const canUndo = historyStack.current.length > 0 && historyIndex.current > 0;
-  const canRedo = historyIndex.current < historyStack.current.length - 1;
 
   // Helper: delete a shape by id across all shape collections
   const deleteShapeById = (id: string) => {
@@ -666,7 +723,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     // Account for page padding offset
     const contentY = maxY - PAGE_PADDING;
     const needed = Math.max(1, Math.ceil((contentY + 150) / (A4_HEIGHT + PAGE_GAP)));
-    if (needed > numPages) setNumPages(needed);
+    if (needed > numPages) setNumPages(Math.min(needed, 50)); // Safety cap at 50 pages
   }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, canvasMode, numPages]);
 
   // create grid pattern so it uses CSS variable for dot color
@@ -702,8 +759,19 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
     observer.observe(document.documentElement, { attributes: true });
 
-    // Handle Paste
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // Separate Effect for System Paste (Minimal dependencies)
+  useEffect(() => {
+    // Handle Paste (System Clipboard Images)
     const handlePaste = async (e: ClipboardEvent) => {
+      // Don't intercept if user is typing in a textarea or input
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -712,6 +780,9 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           const blob = items[i].getAsFile();
           if (!blob) continue;
 
+          // Prevent default to avoid browser trying to paste image as text
+          e.preventDefault();
+
           const reader = new FileReader();
           reader.onload = (event) => {
             const src = event.target?.result as string;
@@ -719,6 +790,8 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
             img.src = src;
             img.onload = () => {
               const id = uuidv4();
+
+              // Snapshot for undo
               pushHistory(getSnapshot());
 
               // Calculate center of view
@@ -755,25 +828,22 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
             };
           };
           reader.readAsDataURL(blob);
-          break; // ONLY ONE IMAGE AT A TIME (per user request)
+          break; // ONLY ONE IMAGE AT A TIME
         }
       }
     };
-    window.addEventListener("paste", handlePaste);
 
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("paste", handlePaste);
-    };
-  }, [rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images]);
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, []); // Only on mount/unmount
 
   const handleInsertMermaid = async () => {
     try {
       // Initialize mermaid if not already
       mermaid.initialize({ startOnLoad: false, theme: 'default' });
-      
+
       const { svg } = await mermaid.render('mermaid-svg-' + uuidv4().replace(/-/g, ''), mermaidCode);
-      
+
       // Convert SVG to DataURL via Canvas
       const parser = new DOMParser();
       const svgDoc = parser.parseFromString(svg, "image/svg+xml");
@@ -781,12 +851,12 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
-      
+
       const img = new window.Image();
       img.src = url;
       img.onload = () => {
         const id = uuidv4();
-        
+
         // Target width
         const targetWidth = 500;
         const scale = targetWidth / img.width;
@@ -799,7 +869,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         if (ctx) {
           ctx.drawImage(img, 0, 0);
           const dataUrl = canvas.toDataURL('image/png');
-          
+
           pushHistory(getSnapshot());
           setImages(prev => [
             ...prev,
@@ -842,6 +912,41 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     setImages([]);
   };
 
+  // Helper: Determine if pointer is on a Transformer handle or selected node
+  function isPointerOnTransformerHandle(stage: Konva.Stage, pointerPos: Konva.Vector2d) {
+    const transformer = transformerRef.current;
+    if (!transformer) return false;
+    // Konva Transformer has a method to get the bounding box and anchors
+    const trRect = transformer.getClientRect();
+    // Check if pointer is inside the transformer's bounding box (with some margin)
+    if (
+      pointerPos.x >= trRect.x - 8 &&
+      pointerPos.x <= trRect.x + trRect.width + 8 &&
+      pointerPos.y >= trRect.y - 8 &&
+      pointerPos.y <= trRect.y + trRect.height + 8
+    ) {
+      // Further, check if pointer is on an anchor (resize handle)
+      const anchors = transformer.getAnchors ? transformer.getAnchors() : [];
+      for (const anchor of anchors) {
+        const node = transformer.findOne(`.${anchor}`);
+        if (node) {
+          const box = node.getClientRect();
+          if (
+            pointerPos.x >= box.x - 6 &&
+            pointerPos.x <= box.x + box.width + 6 &&
+            pointerPos.y >= box.y - 6 &&
+            pointerPos.y <= box.y + box.height + 6
+          ) {
+            return true; // On a handle
+          }
+        }
+      }
+      // If not on a handle, but inside bounding box, treat as on selected node
+      return true;
+    }
+    return false;
+  }
+
   function onPointerDown() {
     if (editingId) return;
     const stage = stageRef.current;
@@ -851,6 +956,16 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     if (!pos) return;
     const { x, y } = transform.point(pos);
     if (isNaN(x) || isNaN(y)) return;
+
+    // --- Marquee vs Resize/Transform Conflict Resolution ---
+    if (action === ACTIONS.SELECT) {
+      // If pointer is on a transformer handle or selected node, do NOT start marquee
+      const absPointer = stage.getPointerPosition();
+      if (absPointer && isPointerOnTransformerHandle(stage, absPointer)) {
+        // Let Konva handle resize/transform
+        return;
+      }
+    }
 
     const id = uuidv4();
 
@@ -879,47 +994,47 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
       case ACTIONS.RECTANGLE:
         setRectangles((prev) => [
           ...prev,
-          { id, x, y, height: 5, width: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) },
+          { id, x, y, height: 5, width: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth },
         ]);
         break;
       case ACTIONS.CIRCLE:
-        setCircles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setCircles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.ARROW:
         setArrows((prev) => [
           ...prev,
-          { id, points: [x, y, x + 5, y + 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) },
+          { id, points: [x, y, x + 5, y + 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth },
         ]);
         break;
       case ACTIONS.TRIANGLE:
-        setTriangles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setTriangles((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.DIAMOND:
-        setDiamonds((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setDiamonds((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.PENTAGON:
-        setPentagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setPentagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.HEXAGON:
-        setHexagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setHexagons((prev) => [...prev, { id, x, y, radius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.ELLIPSE:
-        setEllipses((prev) => [...prev, { id, x, y, radiusX: 5, radiusY: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setEllipses((prev) => [...prev, { id, x, y, radiusX: 5, radiusY: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.STAR:
-        setStars((prev) => [...prev, { id, x, y, innerRadius: 2.5, outerRadius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setStars((prev) => [...prev, { id, x, y, innerRadius: 2.5, outerRadius: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.PARALLELOGRAM:
-        setParallelograms((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setParallelograms((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.CONNECTOR:
-        setConnectors((prev) => [...prev, { id, points: [x, y, x, y], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setConnectors((prev) => [...prev, { id, points: [x, y, x, y], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.SPEECH_BUBBLE:
-        setSpeechBubbles((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setSpeechBubbles((prev) => [...prev, { id, x, y, width: 5, height: 5, fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.BEZIER:
-        setBeziers((prev) => [...prev, { id, x, y, points: [0, 0, 5, 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth, sloppiness: activeProps.sloppiness, seed: Math.floor(Math.random() * 100000) }]);
+        setBeziers((prev) => [...prev, { id, x, y, points: [0, 0, 5, 5], fillColor: activeProps.fill, stroke: activeProps.stroke, strokeWidth: activeProps.strokeWidth }]);
         break;
       case ACTIONS.TEXT:
         setTextboxes((prev) => [
@@ -971,11 +1086,13 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         setRectangles((prev) =>
           prev.map((r) =>
             r.id === currentShapeId.current
-              ? { 
-                  ...r, 
-                  width: isNaN(x - r.x) ? r.width : x - r.x, 
-                  height: isNaN(y - r.y) ? r.height : y - r.y 
-                }
+              ? {
+                ...r,
+                x: Math.min(r.x, x),
+                y: Math.min(r.y, y),
+                width: Math.abs(x - r.x),
+                height: Math.abs(y - r.y)
+              }
               : r,
           ),
         );
@@ -1017,7 +1134,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         setStars((prev) => prev.map((s) => s.id === currentShapeId.current ? { ...s, outerRadius: isNaN(Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5)) ? s.outerRadius : Math.max(5, ((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5), innerRadius: isNaN(Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2)) ? s.innerRadius : Math.max(2.5, (((y - s.y) ** 2 + (x - s.x) ** 2) ** 0.5) / 2) } : s));
         break;
       case ACTIONS.PARALLELOGRAM:
-        setParallelograms((prev) => prev.map((p) => p.id === currentShapeId.current ? { ...p, width: isNaN(x - p.x) ? p.width : x - p.x, height: isNaN(y - p.y) ? p.height : y - p.y } : p));
+        setParallelograms((prev) => prev.map((p) => p.id === currentShapeId.current ? { ...p, x: Math.min(p.x, x), y: Math.min(p.y, y), width: Math.abs(x - p.x), height: Math.abs(y - p.y) } : p));
         break;
       case ACTIONS.CONNECTOR:
         setConnectors((prev) => prev.map((c) => c.id === currentShapeId.current ? { ...c, points: [c.points[0], c.points[1], isNaN(x) ? c.points[2] : x, isNaN(y) ? c.points[3] : y] } : c));
@@ -1271,10 +1388,10 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   ) => (id: string) => (e: any) => {
     const node = e.target;
     setter((prev) =>
-      prev.map((s) => s.id === id ? { 
-        ...s, 
-        x: isNaN(node.x()) ? s.x : node.x(), 
-        y: isNaN(node.y()) ? s.y : node.y() 
+      prev.map((s) => s.id === id ? {
+        ...s,
+        x: isNaN(node.x()) ? s.x : node.x(),
+        y: isNaN(node.y()) ? s.y : node.y()
       } : s)
     );
   };
@@ -1298,39 +1415,46 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   const onTransformEnd = (e: any) => {
     const target = e.target;
     if (!target) return;
-    
+
     // In Konva, if multiple nodes are selected, e.target is the Transformer
     const nodes = target.nodes ? target.nodes() : [target];
     if (!nodes || nodes.length === 0) return;
 
-    // Map all transformations to avoid redundant calculations
+    pushHistory(getSnapshot());
+
+    // Map all transformations
     const transformMap = new Map();
     nodes.forEach((node: any) => {
       const id = node.id();
       if (id && id !== "selection-rectangle" && id !== "background") {
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+
         transformMap.set(id, {
           x: node.x(),
           y: node.y(),
           rotation: node.rotation(),
-          scaleX: node.scaleX(),
-          scaleY: node.scaleY(),
+          scaleX: scaleX,
+          scaleY: scaleY,
           nodeWidth: node.width(),
           nodeHeight: node.height()
         });
-        // Reset node scale so it doesn't accumulate
+
+        // CRITICAL: Reset scale to 1 to prevent accumulation and Konva errors
         node.scaleX(1);
         node.scaleY(1);
       }
     });
 
     if (transformMap.size === 0) return;
-    pushHistory(getSnapshot());
 
     const updateAll = (prev: any[]) => prev.map((s) => {
       const transform = transformMap.get(s.id);
       if (!transform) return s;
-      
+
       const { x, y, rotation, scaleX, scaleY, nodeWidth, nodeHeight } = transform;
+
+      // Update position and rotation
       const updated = {
         ...s,
         x: isNaN(x) ? s.x : x,
@@ -1338,46 +1462,51 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
         rotation: isNaN(rotation) ? s.rotation : rotation,
       };
 
-      // Scale dimensional properties safely
-      const safeScaleX = isNaN(scaleX) ? 1 : scaleX;
-      const safeScaleY = isNaN(scaleY) ? 1 : scaleY;
+      // Sanitize position - prevent shapes from flying to infinity
+      updated.x = Math.max(-10000, Math.min(10000, updated.x));
+      updated.y = Math.max(-10000, Math.min(10000, updated.y));
 
+      // Scale dimensional properties safely - use absolute scale for geometry
+      const absScaleX = Math.abs(isNaN(scaleX) ? 1 : (Math.abs(scaleX) > 100 ? (scaleX > 0 ? 100 : -100) : scaleX));
+      const absScaleY = Math.abs(isNaN(scaleY) ? 1 : (Math.abs(scaleY) > 100 ? (scaleY > 0 ? 100 : -100) : scaleY));
+
+      // For symmetric/circular shapes, we want uniform scaling
+      const isSymmetric = s.radius !== undefined || s.radiusX !== undefined || s.outerRadius !== undefined;
+      const uniformScale = isSymmetric ? Math.max(absScaleX, absScaleY) : 1;
+
+      // Update geometry based on shape type
       if (s.width !== undefined) {
-        const val = (s.width || nodeWidth) * safeScaleX;
-        updated.width = isNaN(val) ? s.width : val;
+        updated.width = Math.max(5, (s.width || nodeWidth) * absScaleX);
       }
       if (s.height !== undefined) {
-        const val = (s.height || nodeHeight) * safeScaleY;
-        updated.height = isNaN(val) ? s.height : val;
-      }
-      if (s.radius !== undefined) {
-        const val = (s.radius || 5) * safeScaleX;
-        updated.radius = isNaN(val) ? s.radius : val;
-      }
-      if (s.radiusX !== undefined) {
-        const val = (s.radiusX || 5) * safeScaleX;
-        updated.radiusX = isNaN(val) ? s.radiusX : val;
-      }
-      if (s.radiusY !== undefined) {
-        const val = (s.radiusY || 5) * safeScaleY;
-        updated.radiusY = isNaN(val) ? s.radiusY : val;
-      }
-      if (s.innerRadius !== undefined) {
-        const val = (s.innerRadius || 2.5) * safeScaleX;
-        updated.innerRadius = isNaN(val) ? s.innerRadius : val;
-      }
-      if (s.outerRadius !== undefined) {
-        const val = (s.outerRadius || 5) * safeScaleX;
-        updated.outerRadius = isNaN(val) ? s.outerRadius : val;
+        updated.height = Math.max(5, (s.height || nodeHeight) * absScaleY);
       }
 
-      // Transform points for sketches/arrows/paths
-      if (s.points && !s.radius) {
-        updated.points = s.points.map((p: number, i: number) => 
-          i % 2 === 0 ? p * safeScaleX : p * safeScaleY
-        );
+      if (s.radius !== undefined) {
+        updated.radius = Math.max(5, (s.radius || 5) * uniformScale);
       }
-      
+
+      if (s.radiusX !== undefined) {
+        updated.radiusX = Math.max(5, (s.radiusX || 5) * absScaleX);
+      }
+      if (s.radiusY !== undefined) {
+        updated.radiusY = Math.max(5, (s.radiusY || 5) * absScaleY);
+      }
+
+      if (s.innerRadius !== undefined) {
+        updated.innerRadius = Math.max(2, (s.innerRadius || 2.5) * uniformScale);
+      }
+      if (s.outerRadius !== undefined) {
+        updated.outerRadius = Math.max(5, (s.outerRadius || 5) * uniformScale);
+      }
+
+      if (s.points && !s.radius && !s.radiusX && !s.outerRadius) {
+        updated.points = s.points.map((p: number, i: number) => {
+          const scaled = i % 2 === 0 ? p * absScaleX : p * absScaleY;
+          return Math.max(-10000, Math.min(10000, scaled));
+        });
+      }
+
       return updated;
     });
 
@@ -1400,23 +1529,25 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
   };
 
   // Keep Transformer synced with selectedShapeIds across re-renders
+  // Use a more stable sync mechanism
   useEffect(() => {
-    if (selectedShapeIds.length > 0 && transformerRef.current) {
-      const stage = stageRef.current;
-      if (stage) {
-        const nodes = selectedShapeIds
-          .map(id => stage.findOne('#' + id))
-          .filter(Boolean) as any[];
+    const stage = stageRef.current;
+    const transformer = transformerRef.current;
+    if (!stage || !transformer) return;
 
-        if (nodes.length > 0) {
-          transformerRef.current.nodes(nodes);
-          transformerRef.current.getLayer().batchDraw();
-        } else {
-          transformerRef.current.nodes([]);
-        }
+    if (selectedShapeIds.length > 0) {
+      const nodes = selectedShapeIds
+        .map(id => stage.findOne('#' + id))
+        .filter(Boolean) as any[];
+
+      if (nodes.length > 0) {
+        transformer.nodes(nodes);
+        transformer.getLayer().batchDraw();
+      } else {
+        transformer.nodes([]);
       }
     } else {
-      transformerRef.current?.nodes([]);
+      transformer.nodes([]);
     }
   }, [selectedShapeIds, rectangles, circles, arrows, scribbles, textboxes, triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images]);
 
@@ -1543,7 +1674,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
   const handleInsertImageFromModal = (src: string) => {
     if (!src) return;
-    
+
     const img = new window.Image();
     img.src = src;
     img.onload = () => {
@@ -1552,7 +1683,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
 
       const stage = stageRef.current;
       const container = containerRef.current;
-      
+
       let pasteX = 150;
       let pasteY = 150;
 
@@ -1562,11 +1693,11 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
           x: container.offsetWidth / 2,
           y: container.offsetHeight / 2
         });
-        
+
         // Use a reasonable size for the inserted diagram
         const targetWidth = Math.min(600, img.width);
         const targetHeight = targetWidth * (img.height / img.width);
-        
+
         pasteX = center.x - targetWidth / 2;
         pasteY = center.y - targetHeight / 2;
 
@@ -1581,7 +1712,7 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
             height: targetHeight,
           },
         ]);
-        
+
         // Select the newly inserted diagram
         setSelectedShapeIds([id]);
         setSelectedShapeType('Image');
@@ -1613,801 +1744,818 @@ export default function DrawingCanvas({ activeSessionId, onNewSession }: CanvasP
     parallelograms.length === 0;
 
   return (
-    <div className="relative w-full h-full font-['Inter'] bg-white dark:bg-[#121212] transition-colors overflow-hidden">
+    <div className="relative w-full h-full font-['Inter'] bg-white dark:bg-[#121212] transition-colors overflow-hidden flex flex-col">
 
-      {/* FLOATING TOOLBAR */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto">
-        <div className="flex items-center gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl transition-colors">
-          {/* SELECT */}
-          <Tooltip text="Select & move shapes (V)">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SELECT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.SELECT)}
-              aria-label="Select"
-            >
-              <GiArrowCursor size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* HAND */}
-          <Tooltip text="Hand — pan & zoom (H)">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.HAND ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.HAND)}
-              aria-label="Hand"
-            >
-              <LuHand size="1.2rem" />
-            </button>
-          </Tooltip>
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
-          <Tooltip text="Draw freehand (Pencil)">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.SCRIBBLE)}
-              aria-label="Draw freehand (Pencil)"
-            >
-              <LuPencil size="1.2rem" />
-            </button>
-          </Tooltip>
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
-          <Tooltip text="Draw rectangle">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.RECTANGLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.RECTANGLE)}
-              aria-label="Draw rectangle"
-            >
-              <TbRectangle size="1.2rem" />
-            </button>
-          </Tooltip>
-          <Tooltip text="Draw circle">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.CIRCLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.CIRCLE)}
-              aria-label="Draw circle"
-            >
-              <FaRegCircle size="1.1rem" />
-            </button>
-          </Tooltip>
-          <Tooltip text="Draw arrow">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ARROW ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.ARROW)}
-              aria-label="Draw arrow"
-            >
-              <FaLongArrowAltRight size="1.2rem" />
-            </button>
-          </Tooltip>
-          <Tooltip text="Add text box">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.TEXT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.TEXT)}
-              aria-label="Add text box"
-            >
-              <LuType size="1.2rem" />
-            </button>
-          </Tooltip>
-          <Tooltip text="Eraser">
-            <button
-              className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ERASER ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-              onClick={() => setAction(ACTIONS.ERASER)}
-              aria-label="Eraser"
-            >
-              <TbEraser size="1.2rem" />
-            </button>
-          </Tooltip>
+      <div className="flex-1 relative flex overflow-hidden">
+        {/* PAGES SIDEBAR (Conditional) */}
+        {appMode === 'pages' && (
+          <PagesSidebar
+            pages={pages}
+            currentPageId={currentPageId}
+            onSelectPage={handleSwitchPage}
+            onAddPage={handleAddPage}
+            onDeletePage={handleDeletePage}
+            onDuplicatePage={handleDuplicatePage}
+            onRenamePage={handleRenamePage}
+          />
+        )}
 
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+        {/* MAIN CONTENT AREA */}
+        <div className="flex-1 relative overflow-hidden">
+          {/* FLOATING TOOLBAR (Simplified or optional) */}
+          <div className="absolute top-4 right-4 lg:right-auto lg:left-1/2 lg:-translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto w-fit max-w-[85vw] md:max-w-[70%] lg:max-w-none pl-[44px]">
+            <div className="flex items-center gap-0.5 sm:gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl transition-colors overflow-x-auto no-scrollbar">
+              {/* SELECT */}
+              <Tooltip text="Select & move shapes (V)">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SELECT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.SELECT)}
+                  aria-label="Select"
+                >
+                  <GiArrowCursor size="1.2rem" />
+                </button>
+              </Tooltip>
+              {/* HAND */}
+              <Tooltip text="Hand — pan & zoom (H)">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.HAND ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.HAND)}
+                  aria-label="Hand"
+                >
+                  <LuHand size="1.2rem" />
+                </button>
+              </Tooltip>
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+              <Tooltip text="Draw freehand (P) or (Ctrl+P)">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.SCRIBBLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.SCRIBBLE)}
+                  aria-label="Draw freehand (Pencil)"
+                >
+                  <LuPencil size="1.2rem" />
+                </button>
+              </Tooltip>
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+              <Tooltip text="Draw rectangle">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.RECTANGLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.RECTANGLE)}
+                  aria-label="Draw rectangle"
+                >
+                  <TbRectangle size="1.2rem" />
+                </button>
+              </Tooltip>
+              <Tooltip text="Draw circle">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.CIRCLE ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.CIRCLE)}
+                  aria-label="Draw circle"
+                >
+                  <FaRegCircle size="1.1rem" />
+                </button>
+              </Tooltip>
+              <Tooltip text="Draw arrow">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ARROW ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.ARROW)}
+                  aria-label="Draw arrow"
+                >
+                  <FaLongArrowAltRight size="1.2rem" />
+                </button>
+              </Tooltip>
+              <Tooltip text="Add text box">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.TEXT ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.TEXT)}
+                  aria-label="Add text box"
+                >
+                  <LuType size="1.2rem" />
+                </button>
+              </Tooltip>
+              <Tooltip text="Eraser">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${action === ACTIONS.ERASER ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  onClick={() => setAction(ACTIONS.ERASER)}
+                  aria-label="Eraser"
+                >
+                  <TbEraser size="1.2rem" />
+                </button>
+              </Tooltip>
 
-          {/* SHAPES MENU */}
-          <div className="relative">
-            <Tooltip text="More Shapes">
-              <button
-                className={`p-2 rounded-lg transition-colors ${[ACTIONS.TRIANGLE, ACTIONS.DIAMOND, ACTIONS.PENTAGON, ACTIONS.HEXAGON, ACTIONS.STAR, ACTIONS.ELLIPSE, ACTIONS.CONNECTOR, ACTIONS.SPEECH_BUBBLE, ACTIONS.BEZIER, ACTIONS.PARALLELOGRAM].includes(action) ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
-                onClick={() => setShapesMenuOpen(!shapesMenuOpen)}
-                aria-label="More Shapes"
-              >
-                <BiShapePolygon size="1.2rem" />
-              </button>
-            </Tooltip>
-            {shapesMenuOpen && (
-              <div className="absolute top-full mt-2 left-0 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#303030] rounded-xl shadow-lg p-2 grid grid-cols-3 gap-1 z-50 w-36">
-                <Tooltip text="Triangle"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.TRIANGLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.TRIANGLE); setShapesMenuOpen(false) }}><TbTriangle size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Diamond"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.DIAMOND ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.DIAMOND); setShapesMenuOpen(false) }}><BsDiamond size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Pentagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PENTAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PENTAGON); setShapesMenuOpen(false) }}><TbPentagon size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Hexagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.HEXAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.HEXAGON); setShapesMenuOpen(false) }}><TbHexagon size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Ellipse"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.ELLIPSE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.ELLIPSE); setShapesMenuOpen(false) }}><TbOvalVertical size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Star"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.STAR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.STAR); setShapesMenuOpen(false) }}><FaRegStar size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Connector"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.CONNECTOR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.CONNECTOR); setShapesMenuOpen(false) }}><TbRoute size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Speech Bubble"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.SPEECH_BUBBLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.SPEECH_BUBBLE); setShapesMenuOpen(false) }}><FaRegCommentDots size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Bezier Curve"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.BEZIER ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.BEZIER); setShapesMenuOpen(false) }}><TbVectorBezier2 size="1.2rem" /></button></Tooltip>
-                <Tooltip text="Parallelogram"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PARALLELOGRAM ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PARALLELOGRAM); setShapesMenuOpen(false) }}><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5,19 9,5 19,5 15,19" /></svg></button></Tooltip>
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+
+              {/* SHAPES MENU */}
+              <div className="relative">
+                <Tooltip text="More Shapes">
+                  <button
+                    className={`p-2 rounded-lg transition-colors ${[ACTIONS.TRIANGLE, ACTIONS.DIAMOND, ACTIONS.PENTAGON, ACTIONS.HEXAGON, ACTIONS.STAR, ACTIONS.ELLIPSE, ACTIONS.CONNECTOR, ACTIONS.SPEECH_BUBBLE, ACTIONS.BEZIER, ACTIONS.PARALLELOGRAM].includes(action) ? "bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                    onClick={() => setShapesMenuOpen(!shapesMenuOpen)}
+                    aria-label="More Shapes"
+                  >
+                    <BiShapePolygon size="1.2rem" />
+                  </button>
+                </Tooltip>
+                {shapesMenuOpen && (
+                  <div className="absolute top-full mt-2 left-0 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#303030] rounded-xl shadow-lg p-2 grid grid-cols-3 gap-1 z-50 w-36">
+                    <Tooltip text="Triangle"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.TRIANGLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.TRIANGLE); setShapesMenuOpen(false) }}><TbTriangle size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Diamond"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.DIAMOND ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.DIAMOND); setShapesMenuOpen(false) }}><BsDiamond size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Pentagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PENTAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PENTAGON); setShapesMenuOpen(false) }}><TbPentagon size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Hexagon"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.HEXAGON ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.HEXAGON); setShapesMenuOpen(false) }}><TbHexagon size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Ellipse"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.ELLIPSE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.ELLIPSE); setShapesMenuOpen(false) }}><TbOvalVertical size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Star"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.STAR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.STAR); setShapesMenuOpen(false) }}><FaRegStar size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Connector"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.CONNECTOR ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.CONNECTOR); setShapesMenuOpen(false) }}><TbRoute size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Speech Bubble"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.SPEECH_BUBBLE ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.SPEECH_BUBBLE); setShapesMenuOpen(false) }}><FaRegCommentDots size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Bezier Curve"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.BEZIER ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.BEZIER); setShapesMenuOpen(false) }}><TbVectorBezier2 size="1.2rem" /></button></Tooltip>
+                    <Tooltip text="Parallelogram"><button className={`p-2 flex justify-center col-span-1 rounded-lg hover:bg-gray-100/80 dark:hover:bg-white/5 ${action === ACTIONS.PARALLELOGRAM ? 'bg-white dark:bg-white/10 text-gray-800 dark:text-white shadow-sm border border-gray-200 dark:border-white/10' : 'text-gray-500 dark:text-gray-400'}`} onClick={() => { setAction(ACTIONS.PARALLELOGRAM); setShapesMenuOpen(false) }}><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5,19 9,5 19,5 15,19" /></svg></button></Tooltip>
+                  </div>
+                )}
               </div>
-            )}
+
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+
+              {/* MODERN COLOR PICKERS */}
+              <div className="flex items-center gap-1.5 px-1.5">
+                {/* Shape Fill Color */}
+                <div className="relative">
+                  <Tooltip text="Shape Fill Color">
+                    <button
+                      onClick={() => { setFillMenuOpen(!fillMenuOpen); setPenMenuOpen(false); setShapesMenuOpen(false); }}
+                      className="w-7 h-7 rounded-full border border-gray-200 dark:border-white/10 shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
+                      style={{ background: fillColor === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : fillColor }}
+                    >
+                      {fillColor === 'transparent' && <div className="w-full h-px bg-red-400 rotate-45" />}
+                    </button>
+                  </Tooltip>
+                  {fillMenuOpen && (
+                    <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Fill Color</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733', '#000000', '#ffffff'].map(c => (
+                          <button
+                            key={c}
+                            onClick={() => { setFillColor(c); setFillMenuOpen(false); }}
+                            className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                            style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
+                          />
+                        ))}
+                        <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
+                          <input type="color" value={fillColor === 'transparent' ? '#ffffff' : fillColor} onChange={(e) => setFillColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                          <span className="text-[10px] pointer-events-none">+</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pen / Stroke Color */}
+                <div className="relative">
+                  <Tooltip text="Pen / Stroke Color">
+                    <button
+                      onClick={() => { setPenMenuOpen(!penMenuOpen); setFillMenuOpen(false); setShapesMenuOpen(false); }}
+                      className="w-7 h-7 rounded-full border-2 border-white dark:border-[#1a1a1a] shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
+                      style={{ background: penColor }}
+                    >
+                      <LuPencil size="0.7rem" className={penColor === '#ffffff' || penColor === 'white' ? 'text-black' : 'text-white'} />
+                    </button>
+                  </Tooltip>
+                  {penMenuOpen && (
+                    <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Pen Color</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#a855f7', '#6366f1'].map(c => (
+                          <button
+                            key={c}
+                            onClick={() => { setPenColor(c); setPenMenuOpen(false); }}
+                            className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${penColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                            style={{ background: c }}
+                          />
+                        ))}
+                        <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
+                          <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                          <span className="text-[10px] pointer-events-none">+</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+
+              <Tooltip text="Undo (Ctrl+Z)">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${!canUndo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  aria-label="Undo"
+                >
+                  <LuUndo2 size="1.2rem" />
+                </button>
+              </Tooltip>
+              <Tooltip text="Redo (Ctrl+Y)">
+                <button
+                  className={`p-2 rounded-lg transition-colors ${!canRedo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  aria-label="Redo"
+                >
+                  <LuRedo2 size="1.2rem" />
+                </button>
+              </Tooltip>
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+              <Tooltip text="Export as image">
+                <button
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg transition-colors"
+                  onClick={handleExport}
+                  aria-label="Export as image"
+                >
+                  <IoMdDownload size="1.2rem" />
+                </button>
+              </Tooltip>
+              {/* Delete selected shape button */}
+              {selectedShapeIds.length > 0 && (
+                <Tooltip text="Delete selected shape">
+                  <button
+                    className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 border border-red-100 dark:border-red-500/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                    onClick={handleDeleteSelected}
+                    aria-label="Delete selected shapes"
+                  >
+                    <MdDeleteOutline size="1.2rem" />
+                  </button>
+                </Tooltip>
+              )}
+              <Tooltip text="Clear all">
+                <button
+                  className="p-2 text-gray-400 dark:text-gray-500 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-red-500 dark:hover:text-red-400 rounded-lg transition-colors"
+                  onClick={handleClearAll}
+                  aria-label="Clear all"
+                >
+                  <IoMdTrash size="1.2rem" />
+                </button>
+              </Tooltip>
+              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+              <Tooltip text="Insert Mermaid Diagram">
+                <button
+                  className="p-2 text-[#5e6ad2] hover:bg-blue-50 dark:hover:bg-blue-900/10 rounded-lg transition-colors"
+                  onClick={() => setIsMermaidModalOpen(true)}
+                  aria-label="Insert Mermaid Diagram"
+                >
+                  <TbRoute size="1.2rem" />
+                </button>
+              </Tooltip>
+            </div>
+            <button
+              className="px-2 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold disabled:opacity-40 transition-all shadow-[0_2px_10px_rgba(37,99,235,0.3)] flex items-center gap-1 sm:gap-2 whitespace-nowrap border border-blue-500/20"
+              onClick={handleAnalyzeDiagram}
+              disabled={isEmpty || isAnalyzing}
+            >
+              {isAnalyzing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                "Analyse Diagram"
+              )}
+            </button>
+            {/* Canvas mode toggle */}
+            <div className="flex items-center gap-0.5 sm:gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4_20px_rgba(0,0,0,0.4)] rounded-2xl">
+              <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'A4 Page Mode (structured)'}>
+                <button
+                  onClick={() => { if (isEmpty) { setCanvasMode('a4'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
+                  disabled={!isEmpty && canvasMode !== 'a4'}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'a4'
+                    ? 'bg-blue-600 text-white shadow-sm border border-blue-500/20'
+                    : !isEmpty
+                      ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
+                    }`}
+                  aria-label="A4 Page Mode"
+                >
+                  <LuFile size="0.9rem" />
+                  Pages
+                  {!isEmpty && canvasMode !== 'a4' && <span className="ml-0.5 text-gray-400">🔒</span>}
+                </button>
+              </Tooltip>
+              <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'Infinite Canvas Mode (free drawing)'}>
+                <button
+                  onClick={() => { if (isEmpty) { setCanvasMode('infinite'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
+                  disabled={!isEmpty && canvasMode !== 'infinite'}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'infinite'
+                    ? 'bg-blue-600 text-white shadow-sm border border-blue-500/20'
+                    : !isEmpty
+                      ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
+                    }`}
+                  aria-label="Infinite Canvas Mode"
+                >
+                  <LuInfinity size="0.9rem" />
+                  Infinite
+                  {!isEmpty && canvasMode !== 'infinite' && <span className="ml-0.5 text-gray-400">🔒</span>}
+                </button>
+              </Tooltip>
+            </div>
           </div>
 
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+          {/* Floating Property Window — Left Side */}
+          {selectedShapeIds.length > 0 && (
+            <div className="absolute left-4 sm:left-[280px] top-1/2 -translate-y-1/2 z-50 animate-in fade-in slide-in-from-left-4 duration-300">
+              <div className="p-4 bg-white/90 dark:bg-[#1e1e1e]/90 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#333] shadow-2xl flex flex-col gap-4 w-52">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Properties {selectedShapeIds.length > 1 && `(${selectedShapeIds.length})`}</h3>
 
-          {/* MODERN COLOR PICKERS */}
-          <div className="flex items-center gap-1.5 px-1.5">
-            {/* Shape Fill Color */}
-            <div className="relative">
-              <Tooltip text="Shape Fill Color">
-                <button
-                  onClick={() => { setFillMenuOpen(!fillMenuOpen); setPenMenuOpen(false); setShapesMenuOpen(false); }}
-                  className="w-7 h-7 rounded-full border border-gray-200 dark:border-white/10 shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
-                  style={{ background: fillColor === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : fillColor }}
-                >
-                  {fillColor === 'transparent' && <div className="w-full h-px bg-red-400 rotate-45" />}
-                </button>
-              </Tooltip>
-              {fillMenuOpen && (
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Fill Color</h4>
-                  <div className="grid grid-cols-4 gap-2">
-                    {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733', '#000000', '#ffffff'].map(c => (
+                {/* Outline Color */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-gray-500">Outline Color</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308'].map(c => (
                       <button
                         key={c}
-                        onClick={() => { setFillColor(c); setFillMenuOpen(false); }}
-                        className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
-                        style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
-                      />
-                    ))}
-                    <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
-                      <input type="color" value={fillColor === 'transparent' ? '#ffffff' : fillColor} onChange={(e) => setFillColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-                      <span className="text-[10px] pointer-events-none">+</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Pen / Stroke Color */}
-            <div className="relative">
-              <Tooltip text="Pen / Stroke Color">
-                <button
-                  onClick={() => { setPenMenuOpen(!penMenuOpen); setFillMenuOpen(false); setShapesMenuOpen(false); }}
-                  className="w-7 h-7 rounded-full border-2 border-white dark:border-[#1a1a1a] shadow-sm transition-transform hover:scale-110 flex items-center justify-center overflow-hidden"
-                  style={{ background: penColor }}
-                >
-                  <LuPencil size="0.7rem" className={penColor === '#ffffff' || penColor === 'white' ? 'text-black' : 'text-white'} />
-                </button>
-              </Tooltip>
-              {penMenuOpen && (
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl p-3 z-50 w-44">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Pen Color</h4>
-                  <div className="grid grid-cols-4 gap-2">
-                    {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#a855f7', '#6366f1'].map(c => (
-                      <button
-                        key={c}
-                        onClick={() => { setPenColor(c); setPenMenuOpen(false); }}
-                        className={`w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 transition-transform hover:scale-125 ${penColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                        onClick={() => updateSelectedShape({ stroke: c })}
+                        className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.stroke === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
                         style={{ background: c }}
                       />
                     ))}
-                    <div className="relative w-6 h-6 rounded-full border border-gray-100 dark:border-gray-800 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-white/5">
-                      <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-                      <span className="text-[10px] pointer-events-none">+</span>
-                    </div>
+                    <input type="color" className="w-5 h-5 p-0 border-0 bg-transparent cursor-pointer" onChange={(e) => updateSelectedShape({ stroke: e.target.value })} />
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
 
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
+                {/* Fill Color */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-gray-500">Fill Color</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => updateSelectedShape({ fillColor: c })}
+                        className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+                        style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
+                      />
+                    ))}
+                  </div>
+                </div>
 
-          <Tooltip text="Undo (Ctrl+Z)">
-            <button
-              className={`p-2 rounded-lg transition-colors ${!canUndo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
-              onClick={handleUndo}
-              disabled={!canUndo}
-              aria-label="Undo"
-            >
-              <LuUndo2 size="1.2rem" />
-            </button>
-          </Tooltip>
-          <Tooltip text="Redo (Ctrl+Y)">
-            <button
-              className={`p-2 rounded-lg transition-colors ${!canRedo ? 'opacity-30 cursor-not-allowed text-gray-400 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200'}`}
-              onClick={handleRedo}
-              disabled={!canRedo}
-              aria-label="Redo"
-            >
-              <LuRedo2 size="1.2rem" />
-            </button>
-          </Tooltip>
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
-          <Tooltip text="Export as image">
-            <button
-              className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg transition-colors"
-              onClick={handleExport}
-              aria-label="Export as image"
-            >
-              <IoMdDownload size="1.2rem" />
-            </button>
-          </Tooltip>
-          {/* Delete selected shape button */}
-          {selectedShapeIds.length > 0 && (
-            <Tooltip text="Delete selected shape">
-              <button
-                className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 border border-red-100 dark:border-red-500/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-                onClick={handleDeleteSelected}
-                aria-label="Delete selected shapes"
-              >
-                <MdDeleteOutline size="1.2rem" />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip text="Clear all">
-            <button
-              className="p-2 text-gray-400 dark:text-gray-500 hover:bg-gray-100/80 dark:hover:bg-white/5 hover:text-red-500 dark:hover:text-red-400 rounded-lg transition-colors"
-              onClick={handleClearAll}
-              aria-label="Clear all"
-            >
-              <IoMdTrash size="1.2rem" />
-            </button>
-          </Tooltip>
-          <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
-          <Tooltip text="Insert Mermaid Diagram">
-            <button
-              className="p-2 text-[#5e6ad2] hover:bg-blue-50 dark:hover:bg-blue-900/10 rounded-lg transition-colors"
-              onClick={() => setIsMermaidModalOpen(true)}
-              aria-label="Insert Mermaid Diagram"
-            >
-              <TbRoute size="1.2rem" />
-            </button>
-          </Tooltip>
-        </div>
-        <button
-          className="px-4 py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 text-sm font-semibold disabled:opacity-40 transition-all shadow-[0_2px_10px_rgba(250,204,21,0.3)] flex items-center gap-2 whitespace-nowrap border border-yellow-500/20"
-          onClick={handleAnalyzeDiagram}
-          disabled={isEmpty || isAnalyzing}
-        >
-          {isAnalyzing ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            "Analyse Diagram"
-          )}
-        </button>
-        {/* Canvas mode toggle */}
-        <div className="flex items-center gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl">
-          <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'A4 Page Mode (structured)'}>
-            <button
-              onClick={() => { if (isEmpty) { setCanvasMode('a4'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
-              disabled={!isEmpty && canvasMode !== 'a4'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'a4'
-                  ? 'bg-yellow-400 text-gray-900 shadow-sm border border-yellow-500/20'
-                  : !isEmpty
-                    ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
-                }`}
-              aria-label="A4 Page Mode"
-            >
-              <LuFile size="0.9rem" />
-              Pages
-              {!isEmpty && canvasMode !== 'a4' && <span className="ml-0.5 text-gray-400">🔒</span>}
-            </button>
-          </Tooltip>
-          <Tooltip text={!isEmpty ? 'Clear canvas to switch mode' : 'Infinite Canvas Mode (free drawing)'}>
-            <button
-              onClick={() => { if (isEmpty) { setCanvasMode('infinite'); setStagePos({ x: 0, y: 0 }); setStageScale(1); } }}
-              disabled={!isEmpty && canvasMode !== 'infinite'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${canvasMode === 'infinite'
-                  ? 'bg-yellow-400 text-gray-900 shadow-sm border border-yellow-500/20'
-                  : !isEmpty
-                    ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-600'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/5'
-                }`}
-              aria-label="Infinite Canvas Mode"
-            >
-              <LuInfinity size="0.9rem" />
-              Infinite
-              {!isEmpty && canvasMode !== 'infinite' && <span className="ml-0.5 text-gray-400">🔒</span>}
-            </button>
-          </Tooltip>
-        </div>
-      </div>
-
-      {/* Floating Property Window — Left Side */}
-      {selectedShapeIds.length > 0 && (
-        <div className="absolute left-[280px] top-1/2 -translate-y-1/2 z-50 animate-in fade-in slide-in-from-left-4 duration-300">
-          <div className="p-4 bg-white/90 dark:bg-[#1e1e1e]/90 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#333] shadow-2xl flex flex-col gap-4 w-52">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Properties {selectedShapeIds.length > 1 && `(${selectedShapeIds.length})`}</h3>
-
-            {/* Outline Color */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-gray-500">Outline Color</label>
-              <div className="flex flex-wrap gap-1.5">
-                {['#000000', '#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308'].map(c => (
-                  <button
-                    key={c}
-                    onClick={() => updateSelectedShape({ stroke: c })}
-                    className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.stroke === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
-                    style={{ background: c }}
+                {/* Stroke Width */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-semibold text-gray-500">Stroke Width</label>
+                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">{getSelectedShape()?.strokeWidth || 2}px</span>
+                  </div>
+                  <input
+                    type="range" min="1" max="10" step="1"
+                    value={getSelectedShape()?.strokeWidth || 2}
+                    onChange={(e) => updateSelectedShape({ strokeWidth: parseInt(e.target.value) })}
+                    className="w-full accent-blue-500 h-1.5 bg-gray-200 dark:bg-[#333] rounded-lg appearance-none cursor-pointer"
                   />
-                ))}
-                <input type="color" className="w-5 h-5 p-0 border-0 bg-transparent cursor-pointer" onChange={(e) => updateSelectedShape({ stroke: e.target.value })} />
+                </div>
+
+
+                <button
+                  onClick={handleDeleteSelected}
+                  className="mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                >
+                  <MdDeleteOutline size={16} />
+                  Delete Shape
+                </button>
               </div>
             </div>
+          )}
 
-            {/* Fill Color */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-gray-500">Fill Color</label>
-              <div className="flex flex-wrap gap-1.5">
-                {['transparent', '#ef444433', '#22c55e33', '#3b82f633', '#eab30833', '#a855f733'].map(c => (
-                  <button
-                    key={c}
-                    onClick={() => updateSelectedShape({ fillColor: c })}
-                    className={`w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700 transition-transform hover:scale-125 ${getSelectedShape()?.fillColor === c ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
-                    style={{ background: c === 'transparent' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'4\' viewBox=\'0 0 4 4\'%3E%3Cpath fill=\'%23ccc\' fill-opacity=\'0.5\' d=\'M1 3h1v1H1V3zm2-2h1v1H3V1z\'/%3E%3C/svg%3E")' : c }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Stroke Width */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-[11px] font-semibold text-gray-500">Stroke Width</label>
-                <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">{getSelectedShape()?.strokeWidth || 2}px</span>
-              </div>
-              <input
-                type="range" min="1" max="10" step="1"
-                value={getSelectedShape()?.strokeWidth || 2}
-                onChange={(e) => updateSelectedShape({ strokeWidth: parseInt(e.target.value) })}
-                className="w-full accent-blue-500 h-1.5 bg-gray-200 dark:bg-[#333] rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            {/* Sloppiness */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-[11px] font-semibold text-gray-500">Sloppiness</label>
-                <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">{getSelectedShape()?.sloppiness || 0}</span>
-              </div>
-              <input
-                type="range" min="0" max="4" step="0.5"
-                value={getSelectedShape()?.sloppiness || 0}
-                onChange={(e) => updateSelectedShape({ sloppiness: parseFloat(e.target.value) })}
-                className="w-full accent-yellow-400 h-1.5 bg-gray-200 dark:bg-[#333] rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            <button
-              onClick={handleDeleteSelected}
-              className="mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+          {/* CANVAS — fills full area. A4 mode: tall scrollable stage with centred page cards */}
+          <div
+            ref={containerRef}
+            className={`absolute inset-0 transition-colors`}
+            style={{
+              background: canvasMode === 'a4' ? 'var(--canvas-bg-outer)' : undefined,
+              cursor: action === ACTIONS.HAND && canvasMode === 'infinite' ? 'grab'
+                : action === ACTIONS.ERASER ? 'crosshair'
+                  : 'default'
+            }}
+          >
+            {/* Single Stage that always fills the full width */}
+            <Stage
+              ref={stageRef}
+              width={size.width}
+              height={size.height}
+              x={stagePos.x}
+              y={stagePos.y}
+              scaleX={stageScale}
+              scaleY={stageScale}
+              draggable={action === ACTIONS.HAND}
+              onDragMove={(e) => {
+                if (e.target === e.currentTarget) {
+                  const nx = e.target.x();
+                  const ny = e.target.y();
+                  setStagePos({
+                    x: isNaN(nx) ? stagePos.x : nx,
+                    y: isNaN(ny) ? stagePos.y : ny
+                  });
+                }
+              }}
+              onDragEnd={(e) => {
+                if (e.target === e.currentTarget) {
+                  const nx = e.target.x();
+                  const ny = e.target.y();
+                  setStagePos({
+                    x: isNaN(nx) ? stagePos.x : nx,
+                    y: isNaN(ny) ? stagePos.y : ny
+                  });
+                }
+              }}
+              onWheel={handleWheel}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
             >
-              <MdDeleteOutline size={16} />
-              Delete Shape
-            </button>
-          </div>
-        </div>
-      )}
+              <Layer>
+                {/* Background Rect for A4 mode (fills whole stage) */}
+                {canvasMode === 'a4' && (
+                  <Rect
+                    x={-50000}
+                    y={-50000}
+                    width={100000}
+                    height={100000}
+                    id="background"
+                    fill={getCssVar('--canvas-bg-outer', '#e5e7eb')}
+                    onClick={() => {
+                      transformerRef.current?.nodes([]);
+                      setSelectedShapeIds([]);
+                      setSelectedShapeType(null);
+                    }}
+                  />
+                )}
 
-      {/* CANVAS — fills full area. A4 mode: tall scrollable stage with centred page cards */}
-      <div
-        ref={containerRef}
-        className={`absolute inset-0 transition-colors`}
-        style={{
-          background: canvasMode === 'a4' ? 'var(--canvas-bg-outer)' : undefined,
-          cursor: action === ACTIONS.HAND && canvasMode === 'infinite' ? 'grab'
-            : action === ACTIONS.ERASER ? 'crosshair'
-              : 'default'
-        }}
-      >
-        {/* Single Stage that always fills the full width */}
-        <Stage
-          ref={stageRef}
-          width={size.width}
-          height={size.height}
-          x={stagePos.x}
-          y={stagePos.y}
-          scaleX={stageScale}
-          scaleY={stageScale}
-          draggable={action === ACTIONS.HAND}
-          onDragMove={(e) => {
-            if (e.target === e.currentTarget) {
-              const nx = e.target.x();
-              const ny = e.target.y();
-              setStagePos({ 
-                x: isNaN(nx) ? stagePos.x : nx, 
-                y: isNaN(ny) ? stagePos.y : ny 
-              });
-            }
-          }}
-          onDragEnd={(e) => {
-            if (e.target === e.currentTarget) {
-              const nx = e.target.x();
-              const ny = e.target.y();
-              setStagePos({ 
-                x: isNaN(nx) ? stagePos.x : nx, 
-                y: isNaN(ny) ? stagePos.y : ny 
-              });
-            }
-          }}
-          onWheel={handleWheel}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-        >
-          <Layer>
-            {/* Background Rect for A4 mode (fills whole stage) */}
-            {canvasMode === 'a4' && (
-              <Rect
-                x={-50000}
-                y={-50000}
-                width={100000}
-                height={100000}
-                id="background"
-                fill={getCssVar('--canvas-bg-outer', '#e5e7eb')}
-                onClick={() => {
-                  transformerRef.current?.nodes([]);
-                  setSelectedShapeIds([]);
-                  setSelectedShapeType(null);
-                }}
-              />
-            )}
-
-            <Group x={pageOffsetX}>
-              {/* Background — different per mode */}
-              {canvasMode === 'a4' ? (
-                <>
-                  {/* White page cards — centered via Group */}
-                  {Array.from({ length: numPages }, (_, i) => (
+                <Group x={pageOffsetX}>
+                  {/* Background — different per mode */}
+                  {canvasMode === 'a4' ? (
+                    <>
+                      {/* White page cards — centered via Group */}
+                      {Array.from({ length: numPages }, (_, i) => (
+                        <Rect
+                          key={`page-${i}`}
+                          id={`page-${i}`}
+                          x={0} // Centered in group
+                          y={PAGE_PADDING + i * (A4_HEIGHT + PAGE_GAP)}
+                          width={A4_WIDTH}
+                          height={A4_HEIGHT}
+                          fill="#ffffff"
+                          fillPatternImage={gridPattern as any}
+                          fillPatternRepeat="repeat"
+                          fillPatternOffset={{ x: 0, y: 0 }}
+                          shadowColor="rgba(0,0,0,0.12)"
+                          shadowBlur={10}
+                          shadowOffsetY={2}
+                          onClick={() => {
+                            transformerRef.current?.nodes([]);
+                            setSelectedShapeIds([]);
+                            setSelectedShapeType(null);
+                          }}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    /* Infinite canvas: large tiled grid background */
                     <Rect
-                      key={`page-${i}`}
-                      id={`page-${i}`}
-                      x={0} // Centered in group
-                      y={PAGE_PADDING + i * (A4_HEIGHT + PAGE_GAP)}
-                      width={A4_WIDTH}
-                      height={A4_HEIGHT}
-                      fill="#ffffff"
+                      x={-50000}
+                      y={-50000}
+                      width={100000}
+                      height={100000}
+                      id="background"
+                      fill={getCssVar('--canvas-bg', '#ffffff')}
                       fillPatternImage={gridPattern as any}
                       fillPatternRepeat="repeat"
-                      fillPatternOffset={{ x: 0, y: 0 }}
-                      shadowColor="rgba(0,0,0,0.12)"
-                      shadowBlur={10}
-                      shadowOffsetY={2}
                       onClick={() => {
                         transformerRef.current?.nodes([]);
                         setSelectedShapeIds([]);
                         setSelectedShapeType(null);
                       }}
                     />
+                  )}
+
+                  {rectangles.map((rect) => (
+                    <SloppyShape
+                      key={rect.id}
+                      type="rectangle"
+                      {...rect}
+                      isSelected={selectedShapeIds.includes(rect.id)}
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={syncRect(rect.id)}
+                    />
                   ))}
-                </>
-              ) : (
-                /* Infinite canvas: large tiled grid background */
-                <Rect
-                  x={-50000}
-                  y={-50000}
-                  width={100000}
-                  height={100000}
-                  id="background"
-                  fill={getCssVar('--canvas-bg', '#ffffff')}
-                  fillPatternImage={gridPattern as any}
-                  fillPatternRepeat="repeat"
-                  onClick={() => {
-                    transformerRef.current?.nodes([]);
-                    setSelectedShapeIds([]);
-                    setSelectedShapeType(null);
-                  }}
-                />
-              )}
+                  {circles.map((circle) => (
+                    <SloppyShape
+                      key={circle.id}
+                      type="circle"
+                      {...circle}
+                      isSelected={selectedShapeIds.includes(circle.id)}
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={syncCircle(circle.id)}
+                    />
+                  ))}
+                  {arrows.map((arrow) => (
+                    <Arrow
+                      key={arrow.id}
+                      id={arrow.id}
+                      {...arrow}
+                      stroke={selectedShapeIds.includes(arrow.id) ? '#3b82f6' : (arrow.stroke || strokeColor)}
+                      strokeWidth={selectedShapeIds.includes(arrow.id) ? (arrow.strokeWidth || 2) + 0.5 : (arrow.strokeWidth || 2)}
+                      fill={arrow.fillColor || 'transparent'}
+                      name="selectable-shape"
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={syncArrow(arrow.id)}
+                      dragBoundFunc={function (pos) {
+                        if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                        return pos;
+                      }}
+                    />
+                  ))}
+                  {triangles.map((t) => (
+                    <SloppyShape key={t.id} type="triangle" {...t} isSelected={selectedShapeIds.includes(t.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncTriangle(t.id)} />
+                  ))}
+                  {diamonds.map((d) => (
+                    <SloppyShape key={d.id} type="diamond" {...d} isSelected={selectedShapeIds.includes(d.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncDiamond(d.id)} />
+                  ))}
+                  {pentagons.map((p) => (
+                    <SloppyShape key={p.id} type="pentagon" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncPentagon(p.id)} />
+                  ))}
+                  {hexagons.map((h) => (
+                    <SloppyShape key={h.id} type="hexagon" {...h} isSelected={selectedShapeIds.includes(h.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncHexagon(h.id)} />
+                  ))}
+                  {ellipses.map((e) => (
+                    <SloppyShape key={e.id} type="ellipse" {...e} isSelected={selectedShapeIds.includes(e.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncEllipse(e.id)} />
+                  ))}
+                  {stars.map((s) => (
+                    <SloppyShape key={s.id} type="star" {...s} isSelected={selectedShapeIds.includes(s.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncStar(s.id)} />
+                  ))}
+                  {parallelograms.map((p) => (
+                    <SloppyShape key={p.id} type="parallelogram" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncParallel(p.id)} />
+                  ))}
+                  {connectors.map((c) => (
+                    <Path key={c.id} id={c.id} name="selectable-shape" data={`M ${c.points[0]} ${c.points[1]} L ${c.points[0]} ${c.points[3]} L ${c.points[2]} ${c.points[3]}`} stroke={selectedShapeIds.includes(c.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(c.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncConnector(c.id)} dragBoundFunc={function (pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+                  ))}
+                  {speechBubbles.map((b) => (
+                    <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 L ${b.width} 0 L ${b.width} ${b.height * 0.8} L ${b.width * 0.6} ${b.height * 0.8} L ${b.width * 0.5} ${b.height} L ${b.width * 0.4} ${b.height * 0.8} L 0 ${b.height * 0.8} Z`} fill={b.fillColor} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} draggable={isDraggable} onClick={onClick} onDragEnd={syncSpeech(b.id)} dragBoundFunc={function (pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+                  ))}
+                  {beziers.map((b) => (
+                    <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 Q ${b.points[2] / 2 + 50} ${b.points[3] / 2 - 50} ${b.points[2]} ${b.points[3]}`} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncBezier(b.id)} dragBoundFunc={function (pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
+                  ))}
+                  {scribbles.map((s) => (
+                    <Line
+                      key={s.id}
+                      id={s.id}
+                      {...s}
+                      stroke={s.strokeColor}
+                      strokeWidth={2}
+                      lineCap="round"
+                      lineJoin="round"
+                      globalCompositeOperation="source-over"
+                      name="selectable-shape"
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={syncScribble(s.id)}
+                      dragBoundFunc={function (pos) {
+                        if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                        return pos;
+                      }}
+                    />
+                  ))}
+                  {textboxes.map((text) => (
+                    <Text
+                      key={text.id}
+                      id={text.id}
+                      {...text}
+                      text={editingId === text.id ? "" : text.text}
+                      fontFamily="'Inter', sans-serif"
+                      fontStyle="500"
+                      fontSize={20}
+                      padding={5}
+                      name="selectable-shape"
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={syncTextbox(text.id)}
+                      dragBoundFunc={function (pos) {
+                        if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
+                        return pos;
+                      }}
+                      onDblClick={(e) => {
+                        const stageBox = stageRef.current
+                          .container()
+                          .getBoundingClientRect();
+                        const node = e.target;
+                        const absPos = node.getAbsolutePosition();
+                        setEditingId(text.id);
+                        setEditingText(text.text);
+                        setTextareaPos({
+                          x: stageBox.left + absPos.x,
+                          y: stageBox.top + absPos.y,
+                          width: node.width() * stageScale,
+                        });
+                      }}
+                    />
+                  ))}
+                  {images.map((img) => (
+                    <ImageItem
+                      key={img.id}
+                      s={img}
+                      isSelected={selectedShapeIds.includes(img.id)}
+                      draggable={isDraggable}
+                      onClick={onClick}
+                      onDragEnd={(e: any) => {
+                        const node = e.target;
+                        setImages((prev) =>
+                          prev.map((s) => s.id === img.id ? {
+                            ...s,
+                            x: isNaN(node.x()) ? s.x : node.x(),
+                            y: isNaN(node.y()) ? s.y : node.y()
+                          } : s)
+                        );
+                      }}
+                    />
+                  ))}
+                  <Transformer
+                    ref={transformerRef}
+                    onTransformEnd={onTransformEnd}
+                    centeredScaling={['Circle', 'Star', 'RegularPolygon', 'Ellipse'].includes(selectedShapeType || '')}
+                    keepRatio={['Circle', 'Star', 'RegularPolygon'].includes(selectedShapeType || '')}
+                    onTransform={(e) => {
+                      // Sanitize NaN coordinates and scales during active transform
+                      const transformer = e.target as any;
+                      const nodes = transformer.nodes();
+                      nodes.forEach((node: any) => {
+                        const nx = node.x();
+                        const ny = node.y();
+                        const sx = node.scaleX();
+                        const sy = node.scaleY();
+                        if (isNaN(nx)) node.x(0);
+                        if (isNaN(ny)) node.y(0);
+                        if (isNaN(sx)) node.scaleX(1);
+                        if (isNaN(sy)) node.scaleY(1);
+                      });
+                    }}
+                    boundBoxFunc={(oldBox, newBox) => {
+                      // Limit resize and prevent NaN
+                      const minSize = 5;
+                      const maxSize = 4000;
+                      if (
+                        isNaN(newBox.x) ||
+                        isNaN(newBox.y) ||
+                        isNaN(newBox.width) ||
+                        isNaN(newBox.height) ||
+                        isNaN(newBox.rotation) ||
+                        Math.abs(newBox.width) < minSize ||
+                        Math.abs(newBox.height) < minSize ||
+                        Math.abs(newBox.width) > maxSize ||
+                        Math.abs(newBox.height) > maxSize
+                      ) {
+                        return oldBox;
+                      }
+                      return newBox;
+                    }}
+                  />
+                  {isSelectingRectangle && (
+                    <Rect
+                      id="selection-rectangle"
+                      listening={false}
+                      x={Math.min(selectionStart.x, selectionEnd.x)}
+                      y={Math.min(selectionStart.y, selectionEnd.y)}
+                      width={Math.abs(selectionEnd.x - selectionStart.x)}
+                      height={Math.abs(selectionEnd.y - selectionStart.y)}
+                      fill="rgba(59, 130, 246, 0.1)"
+                      stroke="#3b82f6"
+                      strokeWidth={1}
+                      dash={[5, 5]}
+                    />
+                  )}
+                </Group>
+              </Layer>
+            </Stage>
 
-              {rectangles.map((rect) => (
-                <SloppyShape
-                  key={rect.id}
-                  type="rectangle"
-                  {...rect}
-                  isSelected={selectedShapeIds.includes(rect.id)}
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncRect(rect.id)}
-                />
-              ))}
-              {circles.map((circle) => (
-                <SloppyShape
-                  key={circle.id}
-                  type="circle"
-                  {...circle}
-                  isSelected={selectedShapeIds.includes(circle.id)}
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncCircle(circle.id)}
-                />
-              ))}
-              {arrows.map((arrow) => (
-                <Arrow
-                  key={arrow.id}
-                  id={arrow.id}
-                  {...arrow}
-                  stroke={selectedShapeIds.includes(arrow.id) ? '#3b82f6' : (arrow.stroke || strokeColor)}
-                  strokeWidth={selectedShapeIds.includes(arrow.id) ? (arrow.strokeWidth || 2) + 0.5 : (arrow.strokeWidth || 2)}
-                  fill={arrow.fillColor || 'transparent'}
-                  name="selectable-shape"
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncArrow(arrow.id)}
-                  dragBoundFunc={function(pos) {
-                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
-                    return pos;
-                  }}
-                />
-              ))}
-              {triangles.map((t) => (
-                <SloppyShape key={t.id} type="triangle" {...t} isSelected={selectedShapeIds.includes(t.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncTriangle(t.id)} />
-              ))}
-              {diamonds.map((d) => (
-                <SloppyShape key={d.id} type="diamond" {...d} isSelected={selectedShapeIds.includes(d.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncDiamond(d.id)} />
-              ))}
-              {pentagons.map((p) => (
-                <SloppyShape key={p.id} type="pentagon" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncPentagon(p.id)} />
-              ))}
-              {hexagons.map((h) => (
-                <SloppyShape key={h.id} type="hexagon" {...h} isSelected={selectedShapeIds.includes(h.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncHexagon(h.id)} />
-              ))}
-              {ellipses.map((e) => (
-                <SloppyShape key={e.id} type="ellipse" {...e} isSelected={selectedShapeIds.includes(e.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncEllipse(e.id)} />
-              ))}
-              {stars.map((s) => (
-                <SloppyShape key={s.id} type="star" {...s} isSelected={selectedShapeIds.includes(s.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncStar(s.id)} />
-              ))}
-              {parallelograms.map((p) => (
-                <SloppyShape key={p.id} type="parallelogram" {...p} isSelected={selectedShapeIds.includes(p.id)} draggable={isDraggable} onClick={onClick} onDragEnd={syncParallel(p.id)} />
-              ))}
-              {connectors.map((c) => (
-                <Path key={c.id} id={c.id} name="selectable-shape" data={`M ${c.points[0]} ${c.points[1]} L ${c.points[0]} ${c.points[3]} L ${c.points[2]} ${c.points[3]}`} stroke={selectedShapeIds.includes(c.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(c.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncConnector(c.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
-              ))}
-              {speechBubbles.map((b) => (
-                <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 L ${b.width} 0 L ${b.width} ${b.height * 0.8} L ${b.width * 0.6} ${b.height * 0.8} L ${b.width * 0.5} ${b.height} L ${b.width * 0.4} ${b.height * 0.8} L 0 ${b.height * 0.8} Z`} fill={b.fillColor} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} draggable={isDraggable} onClick={onClick} onDragEnd={syncSpeech(b.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
-              ))}
-              {beziers.map((b) => (
-                <Path key={b.id} id={b.id} x={b.x} y={b.y} name="selectable-shape" data={`M 0 0 Q ${b.points[2] / 2 + 50} ${b.points[3] / 2 - 50} ${b.points[2]} ${b.points[3]}`} stroke={selectedShapeIds.includes(b.id) ? '#3b82f6' : strokeColor} strokeWidth={selectedShapeIds.includes(b.id) ? 2.5 : 2} fill="transparent" draggable={isDraggable} onClick={onClick} onDragEnd={syncBezier(b.id)} dragBoundFunc={function(pos) { if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition(); return pos; }} />
-              ))}
-              {scribbles.map((s) => (
-                <Line
-                  key={s.id}
-                  id={s.id}
-                  {...s}
-                  stroke={s.strokeColor}
-                  strokeWidth={2}
-                  lineCap="round"
-                  lineJoin="round"
-                  globalCompositeOperation="source-over"
-                  name="selectable-shape"
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncScribble(s.id)}
-                  dragBoundFunc={function(pos) {
-                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
-                    return pos;
-                  }}
-                />
-              ))}
-              {textboxes.map((text) => (
-                <Text
-                  key={text.id}
-                  id={text.id}
-                  {...text}
-                  text={editingId === text.id ? "" : text.text}
-                  fontFamily="'Inter', sans-serif"
-                  fontStyle="500"
-                  fontSize={20}
-                  padding={5}
-                  name="selectable-shape"
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={syncTextbox(text.id)}
-                  dragBoundFunc={function(pos) {
-                    if (isNaN(pos.x) || isNaN(pos.y)) return this.absolutePosition();
-                    return pos;
-                  }}
-                  onDblClick={(e) => {
-                    const stageBox = stageRef.current
-                      .container()
-                      .getBoundingClientRect();
-                    const node = e.target;
-                    const absPos = node.getAbsolutePosition();
-                    setEditingId(text.id);
-                    setEditingText(text.text);
-                    setTextareaPos({
-                      x: stageBox.left + absPos.x,
-                      y: stageBox.top + absPos.y,
-                      width: node.width() * stageScale,
-                    });
-                  }}
-                />
-              ))}
-              {images.map((img) => (
-                <ImageItem
-                  key={img.id}
-                  s={img}
-                  isSelected={selectedShapeIds.includes(img.id)}
-                  draggable={isDraggable}
-                  onClick={onClick}
-                  onDragEnd={(e: any) => {
-                    const node = e.target;
-                    setImages((prev) =>
-                      prev.map((s) => s.id === img.id ? { 
-                        ...s, 
-                        x: isNaN(node.x()) ? s.x : node.x(), 
-                        y: isNaN(node.y()) ? s.y : node.y() 
-                      } : s)
-                    );
-                  }}
-                />
-              ))}
-              <Transformer
-                ref={transformerRef}
-                onTransformEnd={onTransformEnd}
-                onTransform={(e) => {
-                  // Sanitize NaN coordinates and scales during active transform
-                  const transformer = e.target as any;
-                  const nodes = transformer.nodes();
-                  nodes.forEach((node: any) => {
-                    if (isNaN(node.x())) node.x(0);
-                    if (isNaN(node.y())) node.y(0);
-                    if (isNaN(node.scaleX())) node.scaleX(1);
-                    if (isNaN(node.scaleY())) node.scaleY(1);
-                  });
-                }}
-                boundBoxFunc={(oldBox, newBox) => {
-                  // Limit resize and prevent NaN
-                  if (
-                    isNaN(newBox.x) ||
-                    isNaN(newBox.y) ||
-                    isNaN(newBox.width) || 
-                    isNaN(newBox.height) ||
-                    isNaN(newBox.rotation) ||
-                    Math.abs(newBox.width) < 5 || 
-                    Math.abs(newBox.height) < 5
-                  ) {
-                    return oldBox;
-                  }
-                  return newBox;
-                }}
-              />
-              {isSelectingRectangle && (
-                <Rect
-                  id="selection-rectangle"
-                  listening={false}
-                  x={Math.min(selectionStart.x, selectionEnd.x)}
-                  y={Math.min(selectionStart.y, selectionEnd.y)}
-                  width={Math.abs(selectionEnd.x - selectionStart.x)}
-                  height={Math.abs(selectionEnd.y - selectionStart.y)}
-                  fill="rgba(59, 130, 246, 0.1)"
-                  stroke="#3b82f6"
-                  strokeWidth={1}
-                  dash={[5, 5]}
-                />
-              )}
-            </Group>
-          </Layer>
-        </Stage>
-
-        {/* EMPTY STATE — only in infinite mode as full overlay */}
-        {isEmpty && canvasMode === 'infinite' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl flex items-center justify-center mb-4 opacity-70">
-              <LuPencil size="1.5rem" className="text-gray-400 dark:text-gray-500" />
-            </div>
-            <h3 className="text-gray-600 dark:text-gray-300 font-semibold text-lg">
-              Start drawing
-            </h3>
-            <p className="text-gray-400 dark:text-gray-500 text-sm">
-              Select a tool above and draw on the canvas
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* OVERLAY TEXT EDITOR */}
-      {editingId && (
-        <textarea
-          value={editingText}
-          onChange={(e) => setEditingText(e.target.value)}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onBlur={() => {
-            setTextboxes((prev) =>
-              prev.map((t) =>
-                t.id === editingId ? { ...t, text: editingText } : t,
-              ),
-            );
-            setEditingId(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) e.currentTarget.blur();
-          }}
-          autoFocus
-          style={{
-            position: "absolute",
-            top: textareaPos.y,
-            left: textareaPos.x,
-            width: textareaPos.width + 20,
-            minWidth: "100px",
-            fontSize: "20px",
-            fontFamily: "'Inter', sans-serif",
-            fontWeight: "500",
-            lineHeight: 1.25,
-            color: fillColor,
-            background: getCssVar("--surface", "white"),
-            border: `2px solid ${getCssVar("--accent", "#18A0FB")}`,
-            outline: "none",
-            resize: "none",
-            zIndex: 1000,
-            padding: "3px 5px",
-          }}
-        />
-      )}
-
-      <DiagramAnalysisModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        data={analysisData}
-        loading={isAnalyzing}
-        onInsertImage={handleInsertImageFromModal}
-      />
-
-      {/* Mermaid Diagram Modal */}
-      {isMermaidModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMermaidModalOpen(false)} />
-          <div className="relative w-full max-w-xl bg-white dark:bg-[#1e1e1e] rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-white/5 flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                  <TbRoute className="text-blue-500" />
-                  Insert Mermaid Diagram
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Render Mermaid code into an image on your canvas</p>
-              </div>
-              <button 
-                onClick={() => setIsMermaidModalOpen(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-              >
-                <IoMdTrash size="1.2rem" className="text-gray-400" />
-              </button>
-            </div>
-            
-            <div className="p-6 flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Mermaid Code</label>
-                <textarea
-                  value={mermaidCode}
-                  onChange={(e) => setMermaidCode(e.target.value)}
-                  className="w-full h-48 p-4 bg-gray-50 dark:bg-black/20 rounded-2xl border border-gray-200 dark:border-white/5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm resize-none dark:text-gray-200"
-                  placeholder="graph TD..."
-                />
-              </div>
-              
-              <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-500/10">
-                <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed font-medium">
-                  <strong>Tip:</strong> You can use Flowcharts, Sequence Diagrams, Gantt charts, and more. The diagram will be inserted as a high-quality image at your current position.
+            {/* EMPTY STATE — only in infinite mode as full overlay */}
+            {isEmpty && canvasMode === 'infinite' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl flex items-center justify-center mb-4 opacity-70">
+                  <LuPencil size="1.5rem" className="text-gray-400 dark:text-gray-500" />
+                </div>
+                <h3 className="text-gray-600 dark:text-gray-300 font-semibold text-lg">
+                  Start drawing
+                </h3>
+                <p className="text-gray-400 dark:text-gray-500 text-sm">
+                  Select a tool above and draw on the canvas
                 </p>
               </div>
-            </div>
-
-            <div className="p-6 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex justify-end gap-3">
-              <button
-                onClick={() => setIsMermaidModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleInsertMermaid}
-                className="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-500/25 transition-all active:scale-95"
-              >
-                Insert to Canvas
-              </button>
-            </div>
+            )}
           </div>
+
+          {/* OVERLAY TEXT EDITOR */}
+          {editingId && (
+            <textarea
+              value={editingText}
+              onChange={(e) => setEditingText(e.target.value)}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onBlur={() => {
+                setTextboxes((prev) =>
+                  prev.map((t) =>
+                    t.id === editingId ? { ...t, text: editingText } : t,
+                  ),
+                );
+                setEditingId(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) e.currentTarget.blur();
+              }}
+              autoFocus
+              style={{
+                position: "absolute",
+                top: textareaPos.y,
+                left: textareaPos.x,
+                width: textareaPos.width + 20,
+                minWidth: "100px",
+                fontSize: "20px",
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: "500",
+                lineHeight: 1.25,
+                color: fillColor,
+                background: getCssVar("--surface", "white"),
+                border: `2px solid ${getCssVar("--accent", "#18A0FB")}`,
+                outline: "none",
+                resize: "none",
+                zIndex: 1000,
+                padding: "3px 5px",
+              }}
+            />
+          )}
+
+          <DiagramAnalysisModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            data={analysisData}
+            loading={isAnalyzing}
+            onInsertImage={handleInsertImageFromModal}
+          />
+
+          {/* Mermaid Diagram Modal */}
+          {isMermaidModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMermaidModalOpen(false)} />
+              <div className="relative w-full max-w-xl bg-white dark:bg-[#1e1e1e] rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-white/5 flex flex-col animate-in zoom-in-95 duration-200">
+                <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
+                      <TbRoute className="text-blue-500" />
+                      Insert Mermaid Diagram
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Render Mermaid code into an image on your canvas</p>
+                  </div>
+                  <button
+                    onClick={() => setIsMermaidModalOpen(false)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
+                  >
+                    <IoMdTrash size="1.2rem" className="text-gray-400" />
+                  </button>
+                </div>
+
+                <div className="p-6 flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Mermaid Code</label>
+                    <textarea
+                      value={mermaidCode}
+                      onChange={(e) => setMermaidCode(e.target.value)}
+                      className="w-full h-48 p-4 bg-gray-50 dark:bg-black/20 rounded-2xl border border-gray-200 dark:border-white/5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm resize-none dark:text-gray-200"
+                      placeholder="graph TD..."
+                    />
+                  </div>
+
+                  <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-500/10">
+                    <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed font-medium">
+                      <strong>Tip:</strong> You can use Flowcharts, Sequence Diagrams, Gantt charts, and more. The diagram will be inserted as a high-quality image at your current position.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex justify-end gap-3">
+                  <button
+                    onClick={() => setIsMermaidModalOpen(false)}
+                    className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleInsertMermaid}
+                    className="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-500/25 transition-all active:scale-95"
+                  >
+                    Insert to Canvas
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
-}
+});
+
+export default DrawingCanvas;

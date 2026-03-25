@@ -19,6 +19,15 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState(() => localStorage.getItem("current_session_id"));
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // Navbar <-> Canvas Bridge
+  const canvasRef = useRef(null);
+  const [canvasState, setCanvasState] = useState({
+    canUndo: false,
+    canRedo: false,
+    hasSelection: false,
+    appMode: 'single',
+  });
+
   const handleNewSession = async () => {
     try {
       const token = await auth.currentUser?.getIdToken();
@@ -45,15 +54,12 @@ function App() {
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Fetch role from Firebase ID Token (custom claims)
         const tokenResult = await firebaseUser.getIdTokenResult();
         const userRole = tokenResult.claims.role;
-
         if (userRole) {
           setUser(firebaseUser);
           setRole(userRole);
         } else {
-          // Keep user as null so Login component stays rendered for role selection
           setUser(null);
           setRole(null);
         }
@@ -63,7 +69,6 @@ function App() {
       }
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -84,18 +89,40 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Navbar */}
-      <div className="h-16 shrink-0">
-        <Navbar user={user} role={role} />
-      </div>
+      {/* Integrated Navbar */}
+      <Navbar 
+        user={user} 
+        role={role} 
+        appMode={canvasState.appMode}
+        onToggleMode={() => canvasRef.current?.handleToggleMode()}
+        onUndo={() => canvasRef.current?.handleUndo()}
+        onRedo={() => canvasRef.current?.handleRedo()}
+        onDelete={() => canvasRef.current?.handleDeleteSelected()}
+        onCopy={() => canvasRef.current?.handleCopySelected()}
+        onPaste={() => canvasRef.current?.handleInternalPaste()}
+        onExportPNG={() => canvasRef.current?.handleExport()}
+        onInsertShape={(type) => canvasRef.current?.handleInsertShape(type)}
+        onAddPage={() => canvasRef.current?.handleAddPage()}
+        onDuplicatePage={() => canvasRef.current?.handleDuplicatePage()}
+        onDeletePage={() => canvasRef.current?.handleDeletePage()}
+        canUndo={canvasState.canUndo}
+        canRedo={canvasState.canRedo}
+        hasSelection={canvasState.hasSelection}
+        onZoomIn={() => canvasRef.current?.handleZoomIn()}
+        onZoomOut={() => canvasRef.current?.handleZoomOut()}
+        onToggleGrid={() => canvasRef.current?.handleToggleGrid()}
+      />
 
-      {/* Main Content — canvas fills full area, panels float on top */}
+      {/* Main Content */}
       <div className="relative flex-1 overflow-hidden">
-
-        {/* Canvas — full-screen background for Teacher / Admin */}
         {(role === 'teacher' || role === 'admin') ? (
           <div className="absolute inset-0">
-            <Canvas activeSessionId={activeSessionId} onNewSession={handleNewSession} />
+            <Canvas 
+              ref={canvasRef}
+              activeSessionId={activeSessionId} 
+              onNewSession={handleNewSession} 
+              onStateChange={setCanvasState}
+            />
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-[#121212] transition-colors">
@@ -106,7 +133,6 @@ function App() {
           </div>
         )}
 
-        {/* Floating Sidebar (Teacher only) — left edge */}
         {role === 'teacher' && (
           <div className="absolute left-0 top-0 h-full z-20">
             <RecentSessionsSidebar
@@ -120,16 +146,11 @@ function App() {
           </div>
         )}
 
-        {/* Floating Chat Section */}
         <div className="absolute right-6 bottom-6 z-50 flex flex-col items-end gap-4 pointer-events-none">
-          {/* Chat Window Card */}
           {isChatOpen && (
-            <div
-              className="w-[400px] h-[600px] bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in slide-in-from-bottom-10 duration-300"
-            >
+            <div className="w-[calc(100vw-3rem)] sm:w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in slide-in-from-bottom-10 duration-300">
               <div className="flex-1 overflow-hidden relative">
                 <ChatWindow activeSessionId={activeSessionId} />
-                {/* Close button inside chat header area if needed, or top right */}
                 <button
                   onClick={() => setIsChatOpen(false)}
                   className="absolute top-4 right-4 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-gray-400 hover:text-gray-600 transition-colors z-30"
@@ -140,7 +161,6 @@ function App() {
             </div>
           )}
 
-          {/* Floating Toggle Button */}
           <Tooltip text={isChatOpen ? "Close AI Chat" : "Open AI Chat"}>
             <button
               onClick={() => setIsChatOpen((v) => !v)}
@@ -154,7 +174,6 @@ function App() {
             </button>
           </Tooltip>
         </div>
-
       </div>
     </div>
   );
