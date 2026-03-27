@@ -30,7 +30,6 @@ import {
   Image,
 } from "react-konva";
 import Konva from "konva";
-import mermaid from "mermaid";
 import { useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import { v4 as uuidv4 } from "uuid";
 
@@ -221,8 +220,6 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
   const [analysisData, setAnalysisData] = useState<DiagramData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const [isMermaidModalOpen, setIsMermaidModalOpen] = useState(false);
-  const [mermaidCode, setMermaidCode] = useState("graph TD\nA[Start] --> B{Is it working?}\nB -- Yes --> C[Great!]\nB -- No --> D[Debug]");
 
   const strokeColorDefault = "#000";
   const getCssVar = (name: string, fallback = "") => {
@@ -867,60 +864,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
     return () => window.removeEventListener("paste", handlePaste);
   }, []); // Only on mount/unmount
 
-  const handleInsertMermaid = async () => {
-    try {
-      // Initialize mermaid if not already
-      mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
-      const { svg } = await mermaid.render('mermaid-svg-' + uuidv4().replace(/-/g, ''), mermaidCode);
-
-      // Convert SVG to DataURL via Canvas
-      const parser = new DOMParser();
-      const svgDoc = parser.parseFromString(svg, "image/svg+xml");
-      const svgElement = svgDoc.documentElement;
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
-
-      const img = new window.Image();
-      img.src = url;
-      img.onload = () => {
-        const id = uuidv4();
-
-        // Target width
-        const targetWidth = 500;
-        const scale = targetWidth / img.width;
-        const targetHeight = img.height * scale;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const dataUrl = canvas.toDataURL('image/png');
-
-          pushHistory(getSnapshot());
-          setImages(prev => [
-            ...prev,
-            {
-              id,
-              x: 150,
-              y: 150,
-              src: dataUrl,
-              width: targetWidth,
-              height: targetHeight,
-            }
-          ]);
-          URL.revokeObjectURL(url);
-          setIsMermaidModalOpen(false);
-        }
-      };
-    } catch (err) {
-      console.error("Mermaid render failed:", err);
-      alert("Mermaid rendering failed. Please check your syntax.");
-    }
-  };
 
   const handleClearAll = () => {
     pushHistory(getSnapshot());
@@ -2025,16 +1969,6 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
                   <IoMdTrash size="1.2rem" />
                 </button>
               </Tooltip>
-              <div className="w-px h-4 bg-gray-200 dark:bg-[#333] mx-1" />
-              <Tooltip text="Insert Mermaid Diagram">
-                <button
-                  className="p-2 text-[#5e6ad2] hover:bg-blue-50 dark:hover:bg-blue-900/10 rounded-lg transition-colors"
-                  onClick={() => setIsMermaidModalOpen(true)}
-                  aria-label="Insert Mermaid Diagram"
-                >
-                  <TbRoute size="1.2rem" />
-                </button>
-              </Tooltip>
             </div>
             <button
               className="px-2 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold disabled:opacity-40 transition-all shadow-[0_2px_10px_rgba(37,99,235,0.3)] flex items-center gap-1 sm:gap-2 whitespace-nowrap border border-blue-500/20"
@@ -2528,62 +2462,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
             onInsertImage={handleInsertImageFromModal}
           />
 
-          {/* Mermaid Diagram Modal */}
-          {isMermaidModalOpen && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMermaidModalOpen(false)} />
-              <div className="relative w-full max-w-xl bg-white dark:bg-[#1e1e1e] rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-white/5 flex flex-col animate-in zoom-in-95 duration-200">
-                <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
-                  <div>
-                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                      <TbRoute className="text-blue-500" />
-                      Insert Mermaid Diagram
-                    </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Render Mermaid code into an image on your canvas</p>
-                  </div>
-                  <button
-                    onClick={() => setIsMermaidModalOpen(false)}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-                  >
-                    <IoMdTrash size="1.2rem" className="text-gray-400" />
-                  </button>
-                </div>
 
-                <div className="p-6 flex flex-col gap-4">
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Mermaid Code</label>
-                    <textarea
-                      value={mermaidCode}
-                      onChange={(e) => setMermaidCode(e.target.value)}
-                      className="w-full h-48 p-4 bg-gray-50 dark:bg-black/20 rounded-2xl border border-gray-200 dark:border-white/5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm resize-none dark:text-gray-200"
-                      placeholder="graph TD..."
-                    />
-                  </div>
-
-                  <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-500/10">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed font-medium">
-                      <strong>Tip:</strong> You can use Flowcharts, Sequence Diagrams, Gantt charts, and more. The diagram will be inserted as a high-quality image at your current position.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-6 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex justify-end gap-3">
-                  <button
-                    onClick={() => setIsMermaidModalOpen(false)}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleInsertMermaid}
-                    className="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-500/25 transition-all active:scale-95"
-                  >
-                    Insert to Canvas
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
