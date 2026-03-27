@@ -70,7 +70,7 @@ const DiagramAnalysisModal: React.FC<DiagramAnalysisModalProps> = ({
       formData.append("prompt", finalPrompt);
 
       const token = await auth.currentUser?.getIdToken();
-      const response = await axios.post("http://localhost:5000/api/improve-diagram", formData, {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/improve-diagram`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${token}`

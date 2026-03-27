@@ -41,7 +41,7 @@ const Login: React.FC = () => {
 
     const finalizeUserSetup = async (user: any, selectedRole: string) => {
         // 1. Set custom role claim in Firebase via backend
-        await axios.post("http://localhost:5000/api/admin/set-initial-role", {
+        await axios.post(`${import.meta.env.VITE_API_URL}/admin/set-initial-role`, {
             uid: user.uid,
             role: selectedRole
         });

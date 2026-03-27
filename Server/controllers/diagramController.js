@@ -125,10 +125,50 @@ const chatWithDiagramHandler = async (req, res, next) => {
   }
 };
 
+const getRecentAnalyzedDiagrams = async (req, res, next) => {
+  try {
+    const { data: diagrams, error } = await supabase
+      .from('rough_sketches')
+      .select(`
+        sketch_id,
+        stroke_data,
+        created_at,
+        ai_analyses (
+          analysis_id,
+          explanation_text,
+          clean_diagrams (
+            mermaid_code
+          )
+        )
+      `)
+      .eq('teacher_id', req.user.uid)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+    
+    // Flatten and format
+    const formatted = diagrams
+      .filter(d => d.ai_analyses?.[0]?.clean_diagrams?.[0]?.mermaid_code)
+      .map(d => ({
+        id: d.sketch_id,
+        createdAt: d.created_at,
+        strokeData: d.stroke_data,
+        mermaidCode: d.ai_analyses[0].clean_diagrams[0].mermaid_code,
+        explanation: JSON.parse(d.ai_analyses[0].explanation_text || '{}')
+      }));
+
+    res.json(formatted);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   analyzeDiagramHandler,
   improveDiagramHandler,
   generateDiagramHandler,
   explainDiagramHandler,
   chatWithDiagramHandler,
+  getRecentAnalyzedDiagrams,
 };

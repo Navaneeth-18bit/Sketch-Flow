@@ -31,7 +31,7 @@ export default function RecentSessionsSidebar({
         try {
             const token = await auth.currentUser?.getIdToken();
             if (!token) return;
-            const res = await axios.get("http://localhost:5000/api/sessions/list", {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL}/sessions/list`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSessions(res.data);

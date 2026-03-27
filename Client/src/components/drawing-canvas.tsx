@@ -54,6 +54,7 @@ interface CanvasProps {
     hasSelection: boolean;
     appMode: 'single' | 'pages';
   }) => void;
+  onAnalysisSuccess?: () => void;
 }
 
 interface CanvasPage {
@@ -159,7 +160,7 @@ const ImageItem = ({ s, isSelected, draggable, onClick, onDragEnd }: any) => {
 };
 
 const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
-  const { activeSessionId, onNewSession, onStateChange } = props;
+  const { activeSessionId, onNewSession, onStateChange, onAnalysisSuccess } = props;
   const [gridPattern, setGridPattern] = useState<HTMLCanvasElement | null>(
     null,
   );
@@ -432,6 +433,35 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
     },
     handleToggleGrid: () => {
       // Logic for toggle grid could be added here
+    },
+    handleOpenRecentAnalysis: async (diagram: any) => {
+      setIsAnalyzing(true);
+      setIsModalOpen(true);
+      setAnalysisData(null);
+      
+      try {
+        const elements = diagram.strokeData;
+        const box = getBoundingBox(elements);
+        const dataUrl = await renderToOffscreenCanvas(elements, box);
+        
+        // Convert dataUrl to File object to support 'Improve' feature
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], "diagram.png", { type: "image/png" });
+        
+        setAnalysisData({
+          originalImage: dataUrl,
+          originalImageFile: file,
+          mermaidCode: diagram.mermaidCode,
+          explanation: diagram.explanation
+        });
+      } catch (err) {
+        console.error("Failed to reconstruct analysis from history:", err);
+        alert("Failed to load historical analysis preview.");
+        setIsModalOpen(false);
+      } finally {
+        setIsAnalyzing(false);
+      }
     }
   }));
 
@@ -636,7 +666,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) return;
-        const res = await axios.get(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/sessions/${activeSessionId}/strokes`, {
           headers: { Authorization: `Bearer ${token}` }
         });
 
@@ -679,7 +709,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) return;
-        await axios.post(`http://localhost:5000/api/sessions/${activeSessionId}/strokes`, {
+        await axios.post(`${import.meta.env.VITE_API_URL}/sessions/${activeSessionId}/strokes`, {
           strokeData: {
             rectangles, circles, arrows, scribbles, textboxes,
             triangles, diamonds, pentagons, hexagons, ellipses, beziers, connectors, speechBubbles, stars, parallelograms, images
@@ -1601,7 +1631,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
       // 0. Get or create a session
       let currentSessionId = activeSessionId || localStorage.getItem('current_session_id');
       if (!currentSessionId) {
-        const sessionRes = await axios.post("http://localhost:5000/api/sessions/create", {
+        const sessionRes = await axios.post(`${import.meta.env.VITE_API_URL}/sessions/create`, {
           title: `Session ${new Date().toLocaleDateString()}`
         }, {
           headers: { Authorization: `Bearer ${await auth.currentUser?.getIdToken()}` }
@@ -1649,7 +1679,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
       const token = await auth.currentUser?.getIdToken();
 
       // 1. Analyze Diagram (gets both mermaid code and explanation)
-      const analyzeRes = await axios.post("http://localhost:5000/api/analyze-diagram", formData, {
+      const analyzeRes = await axios.post(`${import.meta.env.VITE_API_URL}/analyze-diagram`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${token}`
@@ -1663,6 +1693,8 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
         mermaidCode,
         explanation
       });
+      // Refresh recent diagrams list
+      onAnalysisSuccess?.();
     } catch (error) {
       console.error("Analysis failed:", error);
       alert("Failed to analyze diagram. Please try again.");

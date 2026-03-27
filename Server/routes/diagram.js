@@ -7,6 +7,7 @@ const {
   generateDiagramHandler,
   explainDiagramHandler,
   chatWithDiagramHandler,
+  getRecentAnalyzedDiagrams,
 } = require("../controllers/diagramController");
 const upload = require("../middleware/upload");
 const { authMiddleware } = require("../middleware/auth");
@@ -24,6 +25,7 @@ router.post("/analyze-diagram", apiLimiter, authMiddleware, checkRole(['teacher'
 router.post("/improve-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), improveDiagramHandler);
 router.post("/generate-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), generateDiagramHandler);
 router.post("/explain-diagram", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), upload.single("image"), explainDiagramHandler);
+router.get("/recent", apiLimiter, authMiddleware, checkRole(['teacher', 'admin']), getRecentAnalyzedDiagrams);
 
 // Chat restricted to authenticated users (Student, Teacher, Admin)
 router.post("/chat-diagram", apiLimiter, authMiddleware, checkRole(['student', 'teacher', 'admin']), chatWithDiagramHandler);

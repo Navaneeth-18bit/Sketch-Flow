@@ -6,7 +6,7 @@ import {
   LuCopy, LuClipboard, LuTrash2, LuLayoutGrid,
   LuMaximize, LuZoomIn, LuZoomOut, LuSquare, LuCircle,
   LuArrowRight, LuPenTool, LuType, LuImage, LuStickyNote,
-  LuLayers, LuGroup, LuUngroup
+  LuLayers, LuGroup, LuUngroup, LuHistory
 } from 'react-icons/lu';
 import { ThemeContext } from "../contexts/ThemeContext.jsx";
 import { auth } from "../utils/firebase";
@@ -37,6 +37,8 @@ interface NavbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleGrid: () => void;
+  recentDiagrams?: any[];
+  onSelectRecentDiagram?: (diagram: any) => void;
 }
 
 const Navbar: React.FC<NavbarProps> = (props) => {
@@ -145,6 +147,27 @@ const Navbar: React.FC<NavbarProps> = (props) => {
             <MenuDivider />
             <MenuItem label="Group" icon={<LuGroup size={16} />} />
             <MenuItem label="Ungroup" icon={<LuUngroup size={16} />} />
+          </DropdownMenu>
+          
+          <DropdownMenu 
+            label="Recent" 
+            icon={<LuHistory size={16} />}
+            isOpen={activeMenu === 'recent'} 
+            onToggle={() => toggleMenu('recent')} 
+            onClose={() => setActiveMenu(null)}
+          >
+            {props.recentDiagrams && props.recentDiagrams.length > 0 ? (
+              props.recentDiagrams.map((d) => (
+                <MenuItem 
+                  key={d.id} 
+                  label={`Analyzed ${new Date(d.createdAt).toLocaleDateString()}`} 
+                  icon={<LuFile size={16} />}
+                  onClick={() => props.onSelectRecentDiagram?.(d)}
+                />
+              ))
+            ) : (
+              <div className="px-4 py-2 text-xs text-gray-500 italic">No recent diagrams</div>
+            )}
           </DropdownMenu>
 
           {props.appMode === 'pages' && (

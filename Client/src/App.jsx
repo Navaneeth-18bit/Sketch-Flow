@@ -18,6 +18,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState(() => localStorage.getItem("current_session_id"));
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [recentDiagrams, setRecentDiagrams] = useState([]);
 
   // Navbar <-> Canvas Bridge
   const canvasRef = useRef(null);
@@ -32,7 +33,7 @@ function App() {
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
-      const res = await axios.post("http://localhost:5000/api/sessions/create", {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/sessions/create`, {
         title: `Session ${new Date().toLocaleDateString()}`
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -45,9 +46,25 @@ function App() {
     }
   };
 
+  const fetchRecentDiagrams = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await axios.get(`${import.meta.env.VITE_API_URL}/recent`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setRecentDiagrams(res.data);
+    } catch (error) {
+      console.error("Failed to fetch recent diagrams", error);
+    }
+  };
+
   useEffect(() => {
     if (user && role === "teacher" && !activeSessionId) {
       handleNewSession();
+    }
+    if (user && role === "teacher") {
+      fetchRecentDiagrams();
     }
   }, [user, role, activeSessionId]);
 
@@ -111,6 +128,8 @@ function App() {
         onZoomIn={() => canvasRef.current?.handleZoomIn()}
         onZoomOut={() => canvasRef.current?.handleZoomOut()}
         onToggleGrid={() => canvasRef.current?.handleToggleGrid()}
+        recentDiagrams={recentDiagrams}
+        onSelectRecentDiagram={(diagram) => canvasRef.current?.handleOpenRecentAnalysis(diagram)}
       />
 
       {/* Main Content */}
@@ -122,6 +141,7 @@ function App() {
               activeSessionId={activeSessionId} 
               onNewSession={handleNewSession} 
               onStateChange={setCanvasState}
+              onAnalysisSuccess={fetchRecentDiagrams}
             />
           </div>
         ) : (

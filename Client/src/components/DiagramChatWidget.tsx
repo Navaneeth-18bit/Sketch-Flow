@@ -17,7 +17,7 @@ const DiagramChatWidget: React.FC<DiagramChatWidgetProps> = ({ diagramData, onCl
 
   useEffect(() => {
     // Connect to WebSocket server
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io(import.meta.env.VITE_WS_URL);
 
     // Join diagram-specific chat room
     socketRef.current.emit('join_diagram_chat', diagramData.mermaidCode.slice(0, 20)); // Use a unique id

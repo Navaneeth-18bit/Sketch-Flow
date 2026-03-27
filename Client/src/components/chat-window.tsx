@@ -58,7 +58,7 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
         return;
       }
       try {
-        const response = await fetch(`http://localhost:5000/api/chat/${activeSessionId}`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/chat/${activeSessionId}`);
         if (response.ok) {
           const data = await response.json();
           const loadedMessages: Message[] = data.map((msg: any) => ({
@@ -122,7 +122,7 @@ const ChatWindow: React.FC<{ activeSessionId?: string | null }> = ({ activeSessi
         parts: [{ text: msg.content }]
       }));
 
-      const response = await fetch("http://localhost:5000/api/chat", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
