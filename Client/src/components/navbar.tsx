@@ -115,6 +115,11 @@ const Navbar: React.FC<NavbarProps> = (props) => {
             <MenuItem label="Zoom In" icon={<LuZoomIn size={16} />} onClick={props.onZoomIn} />
             <MenuItem label="Zoom Out" icon={<LuZoomOut size={16} />} onClick={props.onZoomOut} />
             <MenuDivider />
+            <MenuItem 
+              label={props.appMode === 'pages' ? "Switch to Single Mode" : "Switch to Multi-Page Mode"} 
+              icon={<LuLayoutGrid size={16} />} 
+              onClick={props.onToggleMode} 
+            />
             <MenuItem label="Toggle Grid" icon={<LuLayoutGrid size={16} />} onClick={props.onToggleGrid} />
             <MenuItem label="Fullscreen" icon={<LuMonitor size={16} />} />
           </DropdownMenu>
@@ -188,21 +193,7 @@ const Navbar: React.FC<NavbarProps> = (props) => {
 
       {/* Right Section: Mode Toggle + Settings */}
       <div className="flex items-center gap-4">
-        {/* Mode Toggle */}
-        <div className="flex items-center gap-1.5 p-1 bg-gray-100 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 ml-2">
-          <button 
-            onClick={() => props.appMode !== 'single' && props.onToggleMode()}
-            className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${props.appMode === 'single' ? 'bg-white dark:bg-white/10 text-blue-500 shadow-sm shadow-black/5' : 'text-gray-500'}`}
-          >
-            SINGLE
-          </button>
-          <button 
-            onClick={() => props.appMode !== 'pages' && props.onToggleMode()}
-            className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${props.appMode === 'pages' ? 'bg-white dark:bg-white/10 text-blue-500 shadow-sm shadow-black/5' : 'text-gray-500'}`}
-          >
-            PAGES
-          </button>
-        </div>
+      {/* Right Section: Settings */}
 
         <div className="h-6 w-px bg-gray-200 dark:bg-white/10 mx-0.5 sm:mx-1" />
 
