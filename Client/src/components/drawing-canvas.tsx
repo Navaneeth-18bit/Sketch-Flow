@@ -1739,7 +1739,7 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
         {/* MAIN CONTENT AREA */}
         <div className="flex-1 relative overflow-hidden">
           {/* FLOATING TOOLBAR (Simplified or optional) */}
-          <div className="absolute top-4 right-4 lg:right-auto lg:left-1/2 lg:-translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto w-fit max-w-[85vw] md:max-w-[70%] lg:max-w-none pl-[44px]">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 pointer-events-auto w-fit max-w-[95vw] md:max-w-[90%] lg:max-w-none px-4">
             <div className="flex items-center gap-0.5 sm:gap-1 p-1 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-gray-200/70 dark:border-white/8 shadow-[0_4px_20px_rgba(0,0,0,0.10)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl transition-colors">
               {/* SELECT */}
               <Tooltip text="Select & move shapes (V)">
