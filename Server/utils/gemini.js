@@ -5,22 +5,27 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const analyzeAndExplainDiagram = async (imageBuffer, mimeType) => {
   const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
 
-  const prompt = `Analyze the provided diagram image.
-Generate:
-1. The Mermaid code representing the diagram structure. Always wrap node labels in double quotes (") if they contain any special characters like parentheses (), equal signs =, brackets [], or operators. Example: A["Value (x + 3) = 0"].
-2. A step-by-step student-friendly explanation of the diagram.
+  const prompt = `Analyze the provided image which may contain diagrams, handwritten text, annotations, or mathematical equations.
+  Generate:
+  1. The Mermaid code representing the structure. 
+     - For diagrams, create a clear flowchart/graph. 
+     - For standalone equations or text, create a simple Mermaid representation (e.g., a process node showing the problem).
+     - *Crucial*: Always wrap node labels in double quotes (") if they contain any special characters like parentheses (), equal signs =, brackets [], or operators. Example: A["Value (x + 3) = 0"].
+  2. A step-by-step student-friendly explanation.
+     - If a mathematical problem or equation (like "find x") is detected, clearly identify it and provide the solution steps in the "steps" array.
+     - The "purpose" should summarize both the visual diagram and any textual/mathematical content found.
 
-Format the response EXACTLY as a JSON object, with no markdown formatting around it:
-{
-  "mermaidCode": "flowchart TD\\n...",
-  "explanation": {
-    "purpose": "A clear overview of what the diagram shows",
-    "components": ["List of key elements"],
-    "relationships": ["How elements connect"],
-    "steps": ["Step 1 — Start of process", "Step 2 — Data input", "..."],
-    "keyInsights": ["Important takeaways"]
-  }
-}`;
+  Format the response EXACTLY as a JSON object, with no markdown formatting around it:
+  {
+    "mermaidCode": "flowchart TD\\n...",
+    "explanation": {
+      "purpose": "A clear overview of the diagram and any identified text or equations",
+      "components": ["List of key elements, variables, or symbols"],
+      "relationships": ["How elements connect or logical derivation steps"],
+      "steps": ["Step 1 — ...", "Step 2 — ...", "..."],
+      "keyInsights": ["Important takeaways, solutions, or final answers"]
+    }
+  }`;
 
   const imagePart = {
     inlineData: {
@@ -47,25 +52,25 @@ Format the response EXACTLY as a JSON object, with no markdown formatting around
 const improveDiagram = async (imageBuffer, mimeType, currentMermaidCode, improvementPrompt) => {
   const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
 
-  const prompt = `You are an expert technical diagram instructor. Review the provided hand-drawn image and its current Mermaid representation:
-Current Mermaid Code:
-${currentMermaidCode}
+  const prompt = `You are an expert technical instructor. Review the provided image (which may contain diagrams, text, or math) and its current Mermaid representation:
+  Current Mermaid Code:
+  ${currentMermaidCode}
 
-The user has requested the following improvement: "${improvementPrompt}"
-Please improve the diagram clarity, optimize the flow, suggest a better structure, or add missing steps based on the request.
-**Crucial**: Always wrap node labels in double quotes (") in the Mermaid code if they contain any special characters (parentheses, equal signs, etc.).
+  The user has requested the following improvement: "${improvementPrompt}"
+  Please improve the clarity, optimize the flow, suggest a better structure, or add missing steps/solutions based on the request.
+  *Crucial*: Always wrap node labels in double quotes (") in the Mermaid code if they contain any special characters.
 
-Format the response EXACTLY as a JSON object, with no markdown formatting around it:
-{
-  "mermaidCode": "flowchart TD\\n...",
-  "explanation": {
-    "purpose": "A clear overview of the improved diagram",
-    "components": ["List of key elements"],
-    "relationships": ["How elements connect"],
-    "steps": ["Step 1 — Start of process", "Step 2 — Data input", "..."],
-    "keyInsights": ["Important takeaways, including what was improved"]
-  }
-}`;
+  Format the response EXACTLY as a JSON object, with no markdown formatting around it:
+  {
+    "mermaidCode": "flowchart TD\\n...",
+    "explanation": {
+      "purpose": "A clear overview of the improved content",
+      "components": ["List of key elements"],
+      "relationships": ["How elements connect or derivation steps"],
+      "steps": ["Step 1 — ...", "Step 2 — ...", "..."],
+      "keyInsights": ["Important takeaways, including what was improved or solved"]
+    }
+  }`;
 
   const imagePart = {
     inlineData: {
