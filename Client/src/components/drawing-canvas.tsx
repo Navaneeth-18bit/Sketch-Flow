@@ -437,7 +437,9 @@ const DrawingCanvas = forwardRef((props: CanvasProps, ref) => {
       setAnalysisData(null);
       
       try {
-        const elements = diagram.strokeData;
+        // diagram.strokeData is an object { rectangles: [], circles: [], ... }
+        // getBoundingBox and renderToOffscreenCanvas expect a flat array of all elements.
+        const elements = Object.values(diagram.strokeData).flat();
         const box = getBoundingBox(elements);
         const dataUrl = await renderToOffscreenCanvas(elements, box);
         
