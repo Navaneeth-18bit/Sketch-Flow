@@ -7,7 +7,7 @@ const analyzeAndExplainDiagram = async (imageBuffer, mimeType) => {
 
   const prompt = `Analyze the provided diagram image.
 Generate:
-1. The Mermaid code representing the diagram structure.
+1. The Mermaid code representing the diagram structure. Always wrap node labels in double quotes (") if they contain any special characters like parentheses (), equal signs =, brackets [], or operators. Example: A["Value (x + 3) = 0"].
 2. A step-by-step student-friendly explanation of the diagram.
 
 Format the response EXACTLY as a JSON object, with no markdown formatting around it:
@@ -53,6 +53,7 @@ ${currentMermaidCode}
 
 The user has requested the following improvement: "${improvementPrompt}"
 Please improve the diagram clarity, optimize the flow, suggest a better structure, or add missing steps based on the request.
+**Crucial**: Always wrap node labels in double quotes (") in the Mermaid code if they contain any special characters (parentheses, equal signs, etc.).
 
 Format the response EXACTLY as a JSON object, with no markdown formatting around it:
 {
